@@ -26,7 +26,7 @@ if st.button('Analyze'):
     if num_records > 2_000:
         st.write(f'Too many records to fetch: {num_records}')
     else:
-        st.write('Fetching articles from OpenAlex')
+        st.write('Fetching Articles from OpenAlex')
         author_articles_df = openalex_to_author_df(get_articles(selected_df))
         st.plotly_chart(get_international_collab_piechart(author_articles_df))
         st.plotly_chart(get_country_collab_networkchart(author_articles_df))
