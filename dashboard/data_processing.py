@@ -102,7 +102,7 @@ def authors_to_country_collab_count(author_articles: pl.DataFrame) -> pl.DataFra
 
 def authors_to_country_collabs(author_articles_df: pl.DataFrame) -> pl.DataFrame:
     """Convert DataFrame to share of international country collaborations."""
-    return ( author_articles_df.group_by('work_id')
+    return (  author_articles_df.group_by('work_id')
         .agg(pl.col('institutions_country_code').unique())
         .with_columns(
             pl.when(pl.col('institutions_country_code').list.len() > 1)
