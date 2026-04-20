@@ -1,18 +1,23 @@
+import logging
 from itertools import combinations
 
 import country_converter as coco
 import polars as pl
 from data_loader import download_openalex_journal_articles
 
+logger = logging.getLogger(__name__)
+
 
 def get_journals() -> pl.DataFrame:
     """Get a dataframe of all OJS journals in the beacon.csv"""
+    logger.info('Reading OJS journals.')
     # TODO: filter out journals with less that X articles?
     return pl.read_csv('data/beacon.csv')
 
 
 def get_articles(journals: pl.DataFrame) -> pl.DataFrame:
     """Fetch articles for journals from OpenAlex as DataFrame."""
+    logger.info('Fetching articles from OpenAlex.')
     result = []
     for journal in journals.iter_rows(named=True):
         articles = download_openalex_journal_articles(journal['issn'].split('\n'))
@@ -38,6 +43,7 @@ def openalex_to_author_df(articles: pl.DataFrame) -> pl.DataFrame:
     """
     # TODO simplification: currently only takes authors' first institution
     #      entry and with known institutions entry
+    logger.info('Converting OpenAlex data.')
     ror_continents = (
         pl.read_csv('data/ror_data.csv')
         .rename(
@@ -75,7 +81,7 @@ def openalex_to_author_df(articles: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-def group_to_collab_count(author_articles: pl.DataFrame, column: str) -> pl.DataFrame:
+def __group_to_collab_count(author_articles: pl.DataFrame, column: str) -> pl.DataFrame:
     """Convert DataFrame to count of collaborating pairs by column (e.g. country)."""
     return (
         author_articles.group_by('work_id')
@@ -103,11 +109,12 @@ def group_to_collab_count(author_articles: pl.DataFrame, column: str) -> pl.Data
 
 def authors_to_country_collab_count(author_articles: pl.DataFrame) -> pl.DataFrame:
     """Convert DataFrame to count of collaborating country pairs."""
+    logger.info('Generating country collaboration data.')
 
     def coco_con(countrycodes: pl.Series) -> pl.Series:
         return pl.Series(coco.convert(countrycodes, to='name_short'))
 
-    df = group_to_collab_count(author_articles, 'institutions_country_code')
+    df = __group_to_collab_count(author_articles, 'institutions_country_code')
     return df.with_columns(
         pl.col('a').alias('country_a').map_batches(coco_con),
         pl.col('b').alias('country_b').map_batches(coco_con),
@@ -116,7 +123,8 @@ def authors_to_country_collab_count(author_articles: pl.DataFrame) -> pl.DataFra
 
 def authors_to_continent_collab_count(author_articles: pl.DataFrame) -> pl.DataFrame:
     """Convert DataFrame to count of collaborating continent pairs."""
-    return group_to_collab_count(author_articles, 'institutions_continent').rename(
+    logger.info('Generating continent collaboration data.')
+    return __group_to_collab_count(author_articles, 'institutions_continent').rename(
         {
             'a': 'continent_a',
             'b': 'continent_b',
@@ -126,6 +134,7 @@ def authors_to_continent_collab_count(author_articles: pl.DataFrame) -> pl.DataF
 
 def authors_to_country_collabs(author_articles_df: pl.DataFrame) -> pl.DataFrame:
     """Convert DataFrame to share of international country collaborations."""
+    logger.info('Generating international collaboration data.')
     return (
         author_articles_df.group_by('work_id')
         .agg(pl.col('institutions_country_code').unique())
@@ -143,6 +152,7 @@ def authors_to_country_collabs(author_articles_df: pl.DataFrame) -> pl.DataFrame
 
 def authors_to_authors_count(author_articles_df: pl.DataFrame) -> pl.DataFrame:
     """Convert DataFrame to count of articles with X authors."""
+    logger.info('Generating author count data.')
     return (
         author_articles_df.group_by('work_id')
         .len()

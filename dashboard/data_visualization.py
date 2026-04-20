@@ -21,7 +21,7 @@ def get_international_collab_piechart(author_articles_df: pl.DataFrame) -> go.Fi
     )
 
 
-def create_network_chart(graph: nx.Graph) -> go.Figure:
+def __create_network_chart(graph: nx.Graph) -> go.Figure:
     """Create generic network chart based on graph input data."""
     pos = nx.spring_layout(graph, weight='weight', seed=42)
 
@@ -89,7 +89,7 @@ def get_country_collab_networkchart(author_articles_df: pl.DataFrame) -> go.Figu
     for row in collabs.iter_rows(named=True):
         G.add_edge(row['country_a'], row['country_b'], weight=row['count'])
 
-    fig = create_network_chart(G)
+    fig = __create_network_chart(G)
     fig.layout.title = 'Network of Country Collaborations'
 
     return fig
@@ -102,7 +102,7 @@ def get_continent_collab_networkchart(author_articles_df: pl.DataFrame) -> go.Fi
     for row in collabs.iter_rows(named=True):
         G.add_edge(row['continent_a'], row['continent_b'], weight=row['count'])
 
-    fig = create_network_chart(G)
+    fig = __create_network_chart(G)
     fig.layout.title = 'Network of Continent Collaborations'
 
     return fig
