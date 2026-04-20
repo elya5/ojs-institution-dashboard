@@ -2,18 +2,21 @@ import networkx as nx
 import plotly.express as px
 import plotly.graph_objects as go
 import polars as pl
-from data_processing import authors_to_country_collab_count, authors_to_country_collabs
+from data_processing import (
+    authors_to_authors_count,
+    authors_to_country_collab_count,
+    authors_to_country_collabs,
+)
 
 
 def get_international_collab_piechart(author_articles_df: pl.DataFrame) -> go.Figure:
     collabs = authors_to_country_collabs(author_articles_df)
-    fig = px.pie(
+    return px.pie(
         collabs,
         values='Count',
         names='Collaboration',
         title='Share of International Collaboration in Articles',
     )
-    return fig
 
 
 def get_country_collab_networkchart(author_articles_df: pl.DataFrame) -> go.Figure:
@@ -80,3 +83,13 @@ def get_country_collab_networkchart(author_articles_df: pl.DataFrame) -> go.Figu
     )
 
     return fig
+
+
+def get_number_of_authors_bar_chart(author_articles_df: pl.DataFrame) -> go.Figure:
+    num_authors = authors_to_authors_count(author_articles_df)
+    return px.bar(
+        num_authors,
+        x='Number of Authors',
+        y='Count',
+        title='Articles by Number of Authors',
+    )

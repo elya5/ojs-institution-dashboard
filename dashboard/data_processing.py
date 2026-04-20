@@ -65,7 +65,7 @@ def openalex_to_author_df(articles: pl.DataFrame) -> pl.DataFrame:
 
 
 def authors_to_country_collab_count(author_articles: pl.DataFrame) -> pl.DataFrame:
-    """Convert DataFrame with authors per article to collaboration countries count."""
+    """Convert DataFrame to count of collaborating country pairs."""
 
     def coco_con(countrycodes: pl.Series) -> pl.Series:
         return pl.Series(coco.convert(countrycodes, to='name_short'))
@@ -112,6 +112,18 @@ def authors_to_country_collabs(author_articles_df: pl.DataFrame) -> pl.DataFrame
             .alias('Collaboration')
         )
         .group_by('Collaboration')
+        .len()
+        .rename({'len': 'Count'})
+    )
+
+
+def authors_to_authors_count(author_articles_df: pl.DataFrame) -> pl.DataFrame:
+    """Convert DataFrame to count of articles with X authors."""
+    return (
+        author_articles_df.group_by('work_id')
+        .len()
+        .rename({'len': 'Number of Authors'})
+        .group_by('Number of Authors')
         .len()
         .rename({'len': 'Count'})
     )
