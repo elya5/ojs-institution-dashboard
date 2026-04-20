@@ -38,14 +38,25 @@ def openalex_to_author_df(articles: pl.DataFrame) -> pl.DataFrame:
     """
     # TODO simplification: currently only takes authors' first institution
     #      entry and with known institutions entry
-    return (articles
-        .select(['id', 'publication_year', 'cited_by_count', 'type', 'authorships'])
+    return (
+        articles.select(
+            ['id', 'publication_year', 'cited_by_count', 'type', 'authorships']
+        )
         .rename({'id': 'work_id'})
         .explode('authorships')
         .unnest('authorships')
         .unnest('author')
-        .drop(['is_corresponding', 'author_position', 'orcid', 'raw_author_name',
-               'raw_affiliation_strings', 'countries', 'affiliations'])
+        .drop(
+            [
+                'is_corresponding',
+                'author_position',
+                'orcid',
+                'raw_author_name',
+                'raw_affiliation_strings',
+                'countries',
+                'affiliations',
+            ]
+        )
         .filter(pl.col('institutions').list.len() > 0)
         .with_columns(pl.col('institutions').list.get(0))
         .unnest('institutions', separator='_')
@@ -55,27 +66,35 @@ def openalex_to_author_df(articles: pl.DataFrame) -> pl.DataFrame:
 
 def authors_to_country_collab_count(author_articles: pl.DataFrame) -> pl.DataFrame:
     """Convert DataFrame with authors per article to collaboration countries count."""
+
     def coco_con(countrycodes: pl.Series) -> pl.Series:
         return pl.Series(coco.convert(countrycodes, to='name_short'))
 
-    return (author_articles
-        .group_by('work_id')
+    return (
+        author_articles.group_by('work_id')
         .agg(pl.col('institutions_country_code').unique().sort().drop_nulls())
-        .filter(pl.col('institutions_country_code').list.len()>=2)
+        .filter(pl.col('institutions_country_code').list.len() >= 2)
         .with_columns(
             pl.col('institutions_country_code')
-                .map_elements(lambda codes: list(combinations(codes, 2)),
-                              return_dtype=pl.List(pl.List(pl.String))
-                )
-                .alias('country_pairs')
+            .map_elements(
+                lambda codes: list(combinations(codes, 2)),
+                return_dtype=pl.List(pl.List(pl.String)),
+            )
+            .alias('country_pairs')
         )
         .explode('country_pairs')
         .group_by('country_pairs')
         .len()
         .sort('len', descending=True)
         .with_columns(
-            pl.col('country_pairs').list.get(0).alias('country_a').map_batches(coco_con),
-            pl.col('country_pairs').list.get(1).alias('country_b').map_batches(coco_con),
+            pl.col('country_pairs')
+            .list.get(0)
+            .alias('country_a')
+            .map_batches(coco_con),
+            pl.col('country_pairs')
+            .list.get(1)
+            .alias('country_b')
+            .map_batches(coco_con),
         )
         .rename({'len': 'count'})
     )
@@ -83,15 +102,15 @@ def authors_to_country_collab_count(author_articles: pl.DataFrame) -> pl.DataFra
 
 def authors_to_country_collabs(author_articles_df: pl.DataFrame) -> pl.DataFrame:
     """Convert DataFrame to share of international country collaborations."""
-    return (author_articles_df
-        .group_by('work_id')
+    return ( author_articles_df.group_by('work_id')
         .agg(pl.col('institutions_country_code').unique())
         .with_columns(
-            pl.when(pl.col("institutions_country_code").list.len() > 1)
-              .then(pl.lit("International Collaboration"))
-              .otherwise(pl.lit("Single Country"))
-              .alias("Collaboration")
-        ).group_by("Collaboration")
+            pl.when(pl.col('institutions_country_code').list.len() > 1)
+            .then(pl.lit('International Collaboration'))
+            .otherwise(pl.lit('Single Country'))
+            .alias('Collaboration')
+        )
+        .group_by('Collaboration')
         .len()
         .rename({'len': 'Count'})
     )
