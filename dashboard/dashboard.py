@@ -12,14 +12,14 @@ journals_df = get_journals()
 st.subheader('Journal Information')
 
 option = st.selectbox(
-    "Select a journal to analyze",
-    [(j['context_name'], ) for j in journals_df.iter_rows(named=True)],
-    format_func=lambda r: r[0]
+    'Select a journal to analyze',
+    [(j['context_name'],) for j in journals_df.iter_rows(named=True)],
+    format_func=lambda r: r[0],
 )
 
 selected_df = journals_df.filter(pl.col('context_name') == option[0]).head(1)
 
-st.write("You selected:", selected_df)
+st.write('You selected:', selected_df)
 
 if st.button('Analyze'):
     num_records = selected_df['total_record_count'][0]

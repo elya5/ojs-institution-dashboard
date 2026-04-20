@@ -11,7 +11,7 @@ def get_international_collab_piechart(author_articles_df: pl.DataFrame) -> go.Fi
         collabs,
         values='Count',
         names='Collaboration',
-        title='Share of International Collaboration in Articles'
+        title='Share of International Collaboration in Articles',
     )
     return fig
 
@@ -29,13 +29,16 @@ def get_country_collab_networkchart(author_articles_df: pl.DataFrame) -> go.Figu
     for u, v in G.edges():
         x0, y0 = pos[u]
         x1, y1 = pos[v]
-        edge_traces.append(go.Scatter(
-            x=[x0, x1, None], y=[y0, y1, None],
-            mode='lines',
-            line={'width': 1, 'color':'#888'},
-            hoverinfo='none',
-            showlegend=False,
-        ))
+        edge_traces.append(
+            go.Scatter(
+                x=[x0, x1, None],
+                y=[y0, y1, None],
+                mode='lines',
+                line={'width': 1, 'color': '#888'},
+                hoverinfo='none',
+                showlegend=False,
+            )
+        )
 
     node_x, node_y, node_text, node_size = [], [], [], []
     for node in G.nodes():
@@ -43,7 +46,7 @@ def get_country_collab_networkchart(author_articles_df: pl.DataFrame) -> go.Figu
         node_x.append(x)
         node_y.append(y)
         degree = sum(d['weight'] for _, _, d in G.edges(node, data=True))
-        node_text.append(f"{node}<br>Total collabs: {degree}")
+        node_text.append(f'{node}<br>Total collabs: {degree}')
         node_size.append(5 + (2 * degree / collabs['count'].max()))
 
     node_trace = go.Scatter(
@@ -68,7 +71,7 @@ def get_country_collab_networkchart(author_articles_df: pl.DataFrame) -> go.Figu
     fig = go.Figure(
         data=[*edge_traces, node_trace],
         layout=go.Layout(
-            title="Network of Country Collaborations",
+            title='Network of Country Collaborations',
             xaxis={'showgrid': False, 'zeroline': False, 'showticklabels': False},
             yaxis={'showgrid': False, 'zeroline': False, 'showticklabels': False},
             hovermode='closest',

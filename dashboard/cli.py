@@ -16,6 +16,7 @@ logger.addHandler(ch)
 def cli():
     pass
 
+
 cli.add_command(download_beacon_dataset)
 cli.add_command(download_ror_dataset)
 
