@@ -21,6 +21,8 @@ def get_articles(journals: pl.DataFrame) -> pl.DataFrame:
     result = []
     for journal in journals.iter_rows(named=True):
         articles = download_openalex_journal_articles(journal['issn'].split('\n'))
+        for article in articles:
+            article['journal_country_code'] = journal['country_consolidated']
         result.extend(articles)
     return pl.DataFrame(result)
 
@@ -40,6 +42,7 @@ def openalex_to_author_df(articles: pl.DataFrame) -> pl.DataFrame:
      - institutions_display_name
      - institutions_country_code
      - institutions_continent
+     - journal_country_code
     """
     # TODO simplification: currently only takes authors' first institution
     #      entry and with known institutions entry
@@ -56,7 +59,14 @@ def openalex_to_author_df(articles: pl.DataFrame) -> pl.DataFrame:
     )
     return (
         articles.select(
-            ['id', 'publication_year', 'cited_by_count', 'type', 'authorships']
+            [
+                'id',
+                'publication_year',
+                'cited_by_count',
+                'type',
+                'authorships',
+                'journal_country_code',
+            ]
         )
         .rename({'id': 'work_id'})
         .explode('authorships')
@@ -132,7 +142,7 @@ def authors_to_continent_collab_count(author_articles: pl.DataFrame) -> pl.DataF
     )
 
 
-def authors_to_country_collabs(author_articles_df: pl.DataFrame) -> pl.DataFrame:
+def authors_to_country_collabs_share(author_articles_df: pl.DataFrame) -> pl.DataFrame:
     """Convert DataFrame to share of international country collaborations."""
     logger.info('Generating international collaboration data.')
     return (
@@ -158,6 +168,30 @@ def authors_to_authors_count(author_articles_df: pl.DataFrame) -> pl.DataFrame:
         .len()
         .rename({'len': 'Number of Authors'})
         .group_by('Number of Authors')
+        .len()
+        .rename({'len': 'Count'})
+    )
+
+
+def authors_to_author_as_journal_location_share(df: pl.DataFrame) -> pl.DataFrame:
+    """Calcuate share of articles where author country and journal country are equal."""
+    return (
+        df.group_by('work_id')
+        .agg(
+            pl.col('institutions_country_code').drop_nulls(),
+            pl.col('journal_country_code').unique(),
+        )
+        .with_columns(
+            pl.when(
+                pl.col('institutions_country_code').list.contains(
+                    pl.col('journal_country_code').list.get(0)
+                )
+            )
+            .then(pl.lit('Same Country'))
+            .otherwise(pl.lit('Different Country'))
+            .alias('Country')
+        )
+        .group_by('Country')
         .len()
         .rename({'len': 'Count'})
     )

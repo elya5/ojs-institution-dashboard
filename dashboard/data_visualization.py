@@ -3,21 +3,33 @@ import plotly.express as px
 import plotly.graph_objects as go
 import polars as pl
 from data_processing import (
+    authors_to_author_as_journal_location_share,
     authors_to_authors_count,
     authors_to_continent_collab_count,
     authors_to_country_collab_count,
-    authors_to_country_collabs,
+    authors_to_country_collabs_share,
 )
 
 
 def get_international_collab_piechart(author_articles_df: pl.DataFrame) -> go.Figure:
     """Create pie chart with international collab vs. just one country articles."""
-    collabs = authors_to_country_collabs(author_articles_df)
+    collabs = authors_to_country_collabs_share(author_articles_df)
     return px.pie(
         collabs,
         values='Count',
         names='Collaboration',
         title='Share of International Collaboration in Articles',
+    )
+
+
+def get_authorjournal_country_piechart(author_articles_df: pl.DataFrame) -> go.Figure:
+    """Create pie chart of articles where journal country is author country."""
+    samecountry = authors_to_author_as_journal_location_share(author_articles_df)
+    return px.pie(
+        samecountry,
+        values='Count',
+        names='Country',
+        title="Share of Articles with Author's Country same as Journal's",
     )
 
 
