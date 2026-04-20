@@ -1,8 +1,7 @@
-import polars as pl
+import networkx as nx
 import plotly.express as px
 import plotly.graph_objects as go
-import networkx as nx
-
+import polars as pl
 from data_processing import authors_to_country_collab_count, authors_to_country_collabs
 
 
@@ -27,7 +26,7 @@ def get_country_collab_networkchart(author_articles_df: pl.DataFrame) -> go.Figu
     pos = nx.spring_layout(G, weight='weight', seed=42)
 
     edge_traces = []
-    for u, v, data in G.edges(data=True):
+    for u, v in G.edges():
         x0, y0 = pos[u]
         x1, y1 = pos[v]
         edge_traces.append(go.Scatter(
@@ -55,25 +54,25 @@ def get_country_collab_networkchart(author_articles_df: pl.DataFrame) -> go.Figu
         textposition='top center',
         hovertext=node_text,
         hoverinfo='text',
-        marker=dict(
-            size=node_size,
-            color=node_size,
-            colorscale='Viridis',
-            showscale=True,
-            colorbar=dict(title='Collaboration strength'),
-            line=dict(width=1, color='white'),
-        ),
+        marker={
+            'size': node_size,
+            'color': node_size,
+            'colorscale': 'Viridis',
+            'showscale': True,
+            'colorbar': {'title': 'Collaboration strength'},
+            'line': {'width': 1, 'color': 'white'},
+        },
         showlegend=False,
     )
 
     fig = go.Figure(
-        data=edge_traces + [node_trace],
+        data=[*edge_traces, node_trace],
         layout=go.Layout(
             title="Network of Country Collaborations",
-            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            xaxis={'showgrid': False, 'zeroline': False, 'showticklabels': False},
+            yaxis={'showgrid': False, 'zeroline': False, 'showticklabels': False},
             hovermode='closest',
-            margin=dict(l=20, r=20, t=20, b=20),
+            margin={'l': 20, 'r': 20, 't': 20, 'b': 20},
         ),
     )
 

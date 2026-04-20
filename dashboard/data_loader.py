@@ -6,23 +6,29 @@ import zipfile
 from itertools import chain
 from pathlib import Path
 
+import click
 import pyalex
 import requests
 from dotenv import load_dotenv
 from pyalex import Works
 
-
 load_dotenv()
-logger = logging.getLogger(__file__)
+logger = logging.getLogger(__name__)
 DATAVERSE_API_KEY = os.getenv("DATAVERSE_API_KEY")
 DATAVERSE_URL = "https://dataverse.harvard.edu/api/access/dataset/:persistentId/?persistentId=doi:10.7910/DVN/OCZNVY"
 pyalex.config.api_key = os.getenv("OPENALEX_API_KEY")
 
 
+@click.command()
 def download_beacon_dataset() -> Path:
     """Download beacon.csv from Harvard Dataverse."""
     logger.info('Downloading beacon.csv')
-    response = requests.get(DATAVERSE_URL, headers={"X-Dataverse-key": DATAVERSE_API_KEY}, stream=True)
+    response = requests.get(
+        DATAVERSE_URL,
+        headers={"X-Dataverse-key": DATAVERSE_API_KEY},
+        stream=True,
+        timeout=60
+    )
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir_path = Path(tmpdir)
