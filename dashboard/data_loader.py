@@ -39,3 +39,31 @@ def download_beacon_dataset() -> Path:
 def download_openalex_journal_articles(issns: list[str]) -> list[dict]:
     query = Works().filter(primary_location={'source': {'issn': '|'.join(issns)}})
     return list(chain(*query.paginate(per_page=200)))
+
+
+@click.command()
+def download_ror_dataset() -> Path:
+    """Download ROR csv dataset to ror_data.csv."""
+    logger.info('Starting to download ROR entities.')
+    r = requests.get("https://zenodo.org/api/records/18985120", timeout=10).json()
+    r = requests.get(r['links']['files'], timeout=10).json()
+    r = requests.get(r['entries'][0]['links']['content'], timeout=60)
+    logger.info('Download complete. Starting to unpack and update database.')
+
+    target_location = Path('ror_data.csv')
+    with tempfile.TemporaryDirectory() as tmp:
+        tmppath = Path(tmp)
+        zippath = tmppath / 'resp.zip'
+        extractpath = tmppath / 'content'
+
+        with zippath.open('wb') as f:
+            f.write(r.content)
+
+        with zipfile.ZipFile(zippath, 'r') as zip_ref:
+            zip_ref.extractall(extractpath)
+
+        csvpath = next(extractpath.glob('*csv'))
+        shutil.move(csvpath, target_location)
+
+    logger.info('Done.')
+    return target_location
