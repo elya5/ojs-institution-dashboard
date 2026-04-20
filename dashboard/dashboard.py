@@ -1,9 +1,10 @@
 import polars as pl
 import streamlit as st
-
-from data_processing import get_journals, get_articles, openalex_to_author_df
-from data_visualization import get_country_collab_networkchart, get_international_collab_piechart
-
+from data_processing import get_articles, get_journals, openalex_to_author_df
+from data_visualization import (
+    get_country_collab_networkchart,
+    get_international_collab_piechart,
+)
 
 st.title('OJS Co-Authorship Dashboard')
 journals_df = get_journals()
