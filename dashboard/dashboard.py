@@ -29,6 +29,6 @@ if st.button('Analyze'):
     else:
         st.write('Fetching Articles from OpenAlex')
         author_articles_df = openalex_to_author_df(get_articles(selected_df))
+        st.plotly_chart(get_number_of_authors_bar_chart(author_articles_df))
         st.plotly_chart(get_international_collab_piechart(author_articles_df))
         st.plotly_chart(get_country_collab_networkchart(author_articles_df))
-        st.plotly_chart(get_number_of_authors_bar_chart(author_articles_df))

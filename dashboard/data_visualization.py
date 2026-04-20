@@ -10,6 +10,7 @@ from data_processing import (
 
 
 def get_international_collab_piechart(author_articles_df: pl.DataFrame) -> go.Figure:
+    """Create pie chart with international collab vs. just one country articles."""
     collabs = authors_to_country_collabs(author_articles_df)
     return px.pie(
         collabs,
@@ -20,6 +21,7 @@ def get_international_collab_piechart(author_articles_df: pl.DataFrame) -> go.Fi
 
 
 def get_country_collab_networkchart(author_articles_df: pl.DataFrame) -> go.Figure:
+    """Create network graph with edges for collaborating countries."""
     collabs = authors_to_country_collab_count(author_articles_df)
 
     G = nx.Graph()
@@ -86,6 +88,7 @@ def get_country_collab_networkchart(author_articles_df: pl.DataFrame) -> go.Figu
 
 
 def get_number_of_authors_bar_chart(author_articles_df: pl.DataFrame) -> go.Figure:
+    """Create bar chart with articles by number of authors."""
     num_authors = authors_to_authors_count(author_articles_df)
     return px.bar(
         num_authors,
