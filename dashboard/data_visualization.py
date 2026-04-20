@@ -4,6 +4,7 @@ import plotly.graph_objects as go
 import polars as pl
 from data_processing import (
     authors_to_authors_count,
+    authors_to_continent_collab_count,
     authors_to_country_collab_count,
     authors_to_country_collabs,
 )
@@ -20,18 +21,12 @@ def get_international_collab_piechart(author_articles_df: pl.DataFrame) -> go.Fi
     )
 
 
-def get_country_collab_networkchart(author_articles_df: pl.DataFrame) -> go.Figure:
-    """Create network graph with edges for collaborating countries."""
-    collabs = authors_to_country_collab_count(author_articles_df)
-
-    G = nx.Graph()
-    for row in collabs.iter_rows(named=True):
-        G.add_edge(row['country_a'], row['country_b'], weight=row['count'])
-
-    pos = nx.spring_layout(G, weight='weight', seed=42)
+def create_network_chart(graph: nx.Graph) -> go.Figure:
+    """Create generic network chart based on graph input data."""
+    pos = nx.spring_layout(graph, weight='weight', seed=42)
 
     edge_traces = []
-    for u, v in G.edges():
+    for u, v in graph.edges():
         x0, y0 = pos[u]
         x1, y1 = pos[v]
         edge_traces.append(
@@ -46,19 +41,20 @@ def get_country_collab_networkchart(author_articles_df: pl.DataFrame) -> go.Figu
         )
 
     node_x, node_y, node_text, node_size = [], [], [], []
-    for node in G.nodes():
+    max_weight = max(d['weight'] for _, _, d in graph.edges(data=True))
+    for node in graph.nodes():
         x, y = pos[node]
         node_x.append(x)
         node_y.append(y)
-        degree = sum(d['weight'] for _, _, d in G.edges(node, data=True))
+        degree = sum(d['weight'] for _, _, d in graph.edges(node, data=True))
         node_text.append(f'{node}<br>Total collabs: {degree}')
-        node_size.append(5 + (2 * degree / collabs['count'].max()))
+        node_size.append(5 + (2 * degree / max_weight))
 
     node_trace = go.Scatter(
         x=node_x,
         y=node_y,
         mode='markers+text',
-        text=list(G.nodes()),
+        text=list(graph.nodes()),
         textposition='top center',
         hovertext=node_text,
         hoverinfo='text',
@@ -76,13 +72,38 @@ def get_country_collab_networkchart(author_articles_df: pl.DataFrame) -> go.Figu
     fig = go.Figure(
         data=[*edge_traces, node_trace],
         layout=go.Layout(
-            title='Network of Country Collaborations',
             xaxis={'showgrid': False, 'zeroline': False, 'showticklabels': False},
             yaxis={'showgrid': False, 'zeroline': False, 'showticklabels': False},
             hovermode='closest',
             margin={'l': 20, 'r': 20, 't': 20, 'b': 20},
         ),
     )
+
+    return fig
+
+
+def get_country_collab_networkchart(author_articles_df: pl.DataFrame) -> go.Figure:
+    """Create network graph with edges for collaborating countries."""
+    collabs = authors_to_country_collab_count(author_articles_df)
+    G = nx.Graph()
+    for row in collabs.iter_rows(named=True):
+        G.add_edge(row['country_a'], row['country_b'], weight=row['count'])
+
+    fig = create_network_chart(G)
+    fig.layout.title = 'Network of Country Collaborations'
+
+    return fig
+
+
+def get_continent_collab_networkchart(author_articles_df: pl.DataFrame) -> go.Figure:
+    """Create network graph with edges for collaborating continents."""
+    collabs = authors_to_continent_collab_count(author_articles_df)
+    G = nx.Graph()
+    for row in collabs.iter_rows(named=True):
+        G.add_edge(row['continent_a'], row['continent_b'], weight=row['count'])
+
+    fig = create_network_chart(G)
+    fig.layout.title = 'Network of Continent Collaborations'
 
     return fig
 

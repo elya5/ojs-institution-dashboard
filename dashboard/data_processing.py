@@ -8,7 +8,7 @@ from data_loader import download_openalex_journal_articles
 def get_journals() -> pl.DataFrame:
     """Get a dataframe of all OJS journals in the beacon.csv"""
     # TODO: filter out journals with less that X articles?
-    return pl.read_csv('beacon.csv')
+    return pl.read_csv('data/beacon.csv')
 
 
 def get_articles(journals: pl.DataFrame) -> pl.DataFrame:
@@ -33,11 +33,21 @@ def openalex_to_author_df(articles: pl.DataFrame) -> pl.DataFrame:
      - display_name
      - institutions_id
      - institutions_display_name
-     - institutions_ror
      - institutions_country_code
+     - institutions_continent
     """
     # TODO simplification: currently only takes authors' first institution
     #      entry and with known institutions entry
+    ror_continents = (
+        pl.read_csv('data/ror_data.csv')
+        .rename(
+            {
+                'locations.geonames_details.continent_name': 'institutions_continent',
+                'id': 'ror_id',
+            }
+        )
+        .select(['ror_id', 'institutions_continent'])
+    )
     return (
         articles.select(
             ['id', 'publication_year', 'cited_by_count', 'type', 'authorships']
@@ -60,7 +70,34 @@ def openalex_to_author_df(articles: pl.DataFrame) -> pl.DataFrame:
         .filter(pl.col('institutions').list.len() > 0)
         .with_columns(pl.col('institutions').list.get(0))
         .unnest('institutions', separator='_')
-        .drop(['institutions_lineage', 'institutions_type'])
+        .join(ror_continents, left_on='institutions_ror', right_on='ror_id')
+        .drop(['institutions_lineage', 'institutions_type', 'institutions_ror'])
+    )
+
+
+def group_to_collab_count(author_articles: pl.DataFrame, column: str) -> pl.DataFrame:
+    """Convert DataFrame to count of collaborating pairs by column (e.g. country)."""
+    return (
+        author_articles.group_by('work_id')
+        .agg(pl.col(column).unique().sort().drop_nulls())
+        .filter(pl.col(column).list.len() >= 2)
+        .with_columns(
+            pl.col(column)
+            .map_elements(
+                lambda codes: list(combinations(codes, 2)),
+                return_dtype=pl.List(pl.List(pl.String)),
+            )
+            .alias('pairs')
+        )
+        .explode('pairs')
+        .group_by('pairs')
+        .len()
+        .sort('len', descending=True)
+        .with_columns(
+            pl.col('pairs').list.get(0).alias('a'),
+            pl.col('pairs').list.get(1).alias('b'),
+        )
+        .rename({'len': 'count'})
     )
 
 
@@ -70,33 +107,20 @@ def authors_to_country_collab_count(author_articles: pl.DataFrame) -> pl.DataFra
     def coco_con(countrycodes: pl.Series) -> pl.Series:
         return pl.Series(coco.convert(countrycodes, to='name_short'))
 
-    return (
-        author_articles.group_by('work_id')
-        .agg(pl.col('institutions_country_code').unique().sort().drop_nulls())
-        .filter(pl.col('institutions_country_code').list.len() >= 2)
-        .with_columns(
-            pl.col('institutions_country_code')
-            .map_elements(
-                lambda codes: list(combinations(codes, 2)),
-                return_dtype=pl.List(pl.List(pl.String)),
-            )
-            .alias('country_pairs')
-        )
-        .explode('country_pairs')
-        .group_by('country_pairs')
-        .len()
-        .sort('len', descending=True)
-        .with_columns(
-            pl.col('country_pairs')
-            .list.get(0)
-            .alias('country_a')
-            .map_batches(coco_con),
-            pl.col('country_pairs')
-            .list.get(1)
-            .alias('country_b')
-            .map_batches(coco_con),
-        )
-        .rename({'len': 'count'})
+    df = group_to_collab_count(author_articles, 'institutions_country_code')
+    return df.with_columns(
+        pl.col('a').alias('country_a').map_batches(coco_con),
+        pl.col('b').alias('country_b').map_batches(coco_con),
+    ).drop(['a', 'b'])
+
+
+def authors_to_continent_collab_count(author_articles: pl.DataFrame) -> pl.DataFrame:
+    """Convert DataFrame to count of collaborating continent pairs."""
+    return group_to_collab_count(author_articles, 'institutions_continent').rename(
+        {
+            'a': 'continent_a',
+            'b': 'continent_b',
+        }
     )
 
 

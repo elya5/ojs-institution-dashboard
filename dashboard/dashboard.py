@@ -2,6 +2,7 @@ import polars as pl
 import streamlit as st
 from data_processing import get_articles, get_journals, openalex_to_author_df
 from data_visualization import (
+    get_continent_collab_networkchart,
     get_country_collab_networkchart,
     get_international_collab_piechart,
     get_number_of_authors_bar_chart,
@@ -31,4 +32,5 @@ if st.button('Analyze'):
         author_articles_df = openalex_to_author_df(get_articles(selected_df))
         st.plotly_chart(get_number_of_authors_bar_chart(author_articles_df))
         st.plotly_chart(get_international_collab_piechart(author_articles_df))
+        st.plotly_chart(get_continent_collab_networkchart(author_articles_df))
         st.plotly_chart(get_country_collab_networkchart(author_articles_df))

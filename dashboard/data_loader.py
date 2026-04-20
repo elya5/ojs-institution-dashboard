@@ -30,6 +30,8 @@ def download_beacon_dataset() -> Path:
         timeout=60,
     )
 
+    target_path = Path('data/beacon.csv')
+    target_path.parent.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir_path = Path(tmpdir)
         zip_path = tmpdir_path / 'dataset.zip'
@@ -37,9 +39,9 @@ def download_beacon_dataset() -> Path:
         with zipfile.ZipFile(zip_path, 'r') as z:
             z.extractall(tmpdir_path)
 
-        shutil.move(tmpdir_path / 'beacon.csv', Path('beacon.csv'))
+        shutil.move(tmpdir_path / 'beacon.csv', target_path)
     logger.info('Download completed')
-    return Path('beacon.csv')
+    return target_path
 
 
 def download_openalex_journal_articles(issns: list[str]) -> list[dict]:
@@ -56,7 +58,8 @@ def download_ror_dataset() -> Path:
     r = requests.get(r['entries'][0]['links']['content'], timeout=60)
     logger.info('Download complete. Starting to unpack and update database.')
 
-    target_location = Path('ror_data.csv')
+    target_location = Path('data/ror_data.csv')
+    target_location.parent.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
         tmppath = Path(tmp)
         zippath = tmppath / 'resp.zip'
