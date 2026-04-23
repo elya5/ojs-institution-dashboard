@@ -3,10 +3,11 @@ import logging
 import streamlit as st
 
 from api import ojs_article_for_institution
-from data_processing import get_journals
 from data_visualization import (
+    get_country_collab_net,
     get_discipline_bar,
     get_ojs_article_count_line,
+    get_ojs_journal_locations_bar,
     get_share_of_ojs_articles_pie,
 )
 
@@ -28,13 +29,15 @@ class StreamlitLogHandler(logging.Handler):
 formatter = logging.Formatter('%(asctime)s - %(message)s')
 handler = StreamlitLogHandler(st.empty().text_area)
 handler.setFormatter(formatter)
+handler_console = logging.StreamHandler()
+handler_console.setFormatter(formatter)
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 logger.addHandler(handler)
+logger.addHandler(handler_console)
 logging.getLogger('country_converter').propagate = False
 
-
-journals_df = get_journals()
+logger.info('Initializing')
 
 st.subheader('Institution Information')
 
@@ -47,4 +50,10 @@ if st.button('Analyze'):
 
     st.plotly_chart(get_share_of_ojs_articles_pie(ror_id))
     st.plotly_chart(get_ojs_article_count_line(articles))
-    st.plotly_chart(get_discipline_bar(articles))
+    st.plotly_chart(get_discipline_bar(articles, ror_id))
+    st.write(
+        'Small number of articles below due to testing '
+        'with DOAJ and then matching with OJS journals'
+    )
+    st.plotly_chart(get_ojs_journal_locations_bar(articles, ror_id))
+    st.plotly_chart(get_country_collab_net(articles))
