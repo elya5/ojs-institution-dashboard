@@ -1,26 +1,24 @@
 import logging
-import os
 import shutil
 import tempfile
 import zipfile
-from itertools import chain
 from pathlib import Path
 
-import click
 import pyalex
 import requests
-from dotenv import load_dotenv
-from pyalex import Works
+from config import (
+    BEACON_PATH,
+    DATAVERSE_API_KEY,
+    OPENALEX_API_KEY,
+    ROR_PATH,
+)
 
-load_dotenv()
 logger = logging.getLogger(__name__)
-DATAVERSE_API_KEY = os.getenv('DATAVERSE_API_KEY')
 DATAVERSE_URL = 'https://dataverse.harvard.edu/api/access/dataset/:persistentId/?persistentId=doi:10.7910/DVN/OCZNVY'
-pyalex.config.api_key = os.getenv('OPENALEX_API_KEY')
+pyalex.config.api_key = OPENALEX_API_KEY
 
 
-@click.command()
-def download_beacon_dataset() -> Path:
+def download_beacon_dataset() -> None:
     """Download beacon.csv from Harvard Dataverse."""
     logger.info('Downloading beacon.csv')
     response = requests.get(
@@ -30,8 +28,7 @@ def download_beacon_dataset() -> Path:
         timeout=60,
     )
 
-    target_path = Path('data/beacon.csv')
-    target_path.parent.mkdir(exist_ok=True)
+    BEACON_PATH.parent.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir_path = Path(tmpdir)
         zip_path = tmpdir_path / 'dataset.zip'
@@ -39,18 +36,11 @@ def download_beacon_dataset() -> Path:
         with zipfile.ZipFile(zip_path, 'r') as z:
             z.extractall(tmpdir_path)
 
-        shutil.move(tmpdir_path / 'beacon.csv', target_path)
+        shutil.move(tmpdir_path / 'beacon.csv', BEACON_PATH)
     logger.info('Download completed')
-    return target_path
 
 
-def download_openalex_journal_articles(issns: list[str]) -> list[dict]:
-    query = Works().filter(primary_location={'source': {'issn': '|'.join(issns)}})
-    return list(chain(*query.paginate(per_page=200)))
-
-
-@click.command()
-def download_ror_dataset() -> Path:
+def download_ror_dataset() -> None:
     """Download ROR csv dataset to ror_data.csv."""
     logger.info('Starting to download ROR entities.')
     r = requests.get('https://zenodo.org/api/records/18985120', timeout=10).json()
@@ -58,8 +48,7 @@ def download_ror_dataset() -> Path:
     r = requests.get(r['entries'][0]['links']['content'], timeout=60)
     logger.info('Download complete. Starting to unpack and update database.')
 
-    target_location = Path('data/ror_data.csv')
-    target_location.parent.mkdir(exist_ok=True)
+    ROR_PATH.parent.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
         tmppath = Path(tmp)
         zippath = tmppath / 'resp.zip'
@@ -72,7 +61,6 @@ def download_ror_dataset() -> Path:
             zip_ref.extractall(extractpath)
 
         csvpath = next(extractpath.glob('*csv'))
-        shutil.move(csvpath, target_location)
+        shutil.move(csvpath, ROR_PATH)
 
     logger.info('Done.')
-    return target_location

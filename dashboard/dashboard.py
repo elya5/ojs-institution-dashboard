@@ -1,14 +1,12 @@
 import logging
 
-import polars as pl
 import streamlit as st
-from data_processing import get_articles, get_journals, openalex_to_author_df
+from api import ojs_article_for_institution
+from data_processing import get_journals
 from data_visualization import (
-    get_authorjournal_country_piechart,
-    get_continent_collab_networkchart,
-    get_country_collab_networkchart,
-    get_international_collab_piechart,
-    get_number_of_authors_bar_chart,
+    get_discipline_bar,
+    get_ojs_article_count_line,
+    get_share_of_ojs_articles_pie,
 )
 
 st.title('OJS Co-Authorship Dashboard')
@@ -37,26 +35,15 @@ logging.getLogger('country_converter').propagate = False
 
 journals_df = get_journals()
 
-st.subheader('Journal Information')
+st.subheader('Institution Information')
 
-option = st.selectbox(
-    'Select a journal to analyze',
-    [(j['context_name'],) for j in journals_df.iter_rows(named=True)],
-    format_func=lambda r: r[0],
-)
+st.write('Only articles from 2020 onwards are considered.')
 
-selected_df = journals_df.filter(pl.col('context_name') == option[0]).head(1)
-
-st.write('You selected:', selected_df)
+ror_id = st.text_input('ROR', 'https://ror.org/0304hq317')
 
 if st.button('Analyze'):
-    num_records = selected_df['total_record_count'][0]
-    if num_records > 2_000:
-        st.write(f'Too many records to fetch: {num_records}')
-    else:
-        author_articles_df = openalex_to_author_df(get_articles(selected_df))
-        st.plotly_chart(get_number_of_authors_bar_chart(author_articles_df))
-        st.plotly_chart(get_international_collab_piechart(author_articles_df))
-        st.plotly_chart(get_authorjournal_country_piechart(author_articles_df))
-        st.plotly_chart(get_continent_collab_networkchart(author_articles_df))
-        st.plotly_chart(get_country_collab_networkchart(author_articles_df))
+    articles = ojs_article_for_institution(ror_id)
+
+    st.plotly_chart(get_share_of_ojs_articles_pie(ror_id))
+    st.plotly_chart(get_ojs_article_count_line(articles))
+    st.plotly_chart(get_discipline_bar(articles))
