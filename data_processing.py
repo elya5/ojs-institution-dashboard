@@ -2,14 +2,20 @@ import logging
 
 import polars as pl
 
+from config import BEACON_PATH
+from data_loader import download_beacon_dataset
+
 logger = logging.getLogger(__name__)
 
 
 def get_journals() -> pl.DataFrame:
     """Get a dataframe of all OJS journals in the beacon.csv"""
     logger.info('Reading OJS journals.')
+    if not BEACON_PATH.exists():
+        download_beacon_dataset()
+
     # TODO: filter out journals with less that X articles?
-    return pl.read_csv('data/beacon.csv')
+    return pl.read_csv(BEACON_PATH)
 
 
 def articles_to_publication_year_count(df: pl.DataFrame) -> pl.DataFrame:
