@@ -1,6 +1,7 @@
 import plotly.express as px
 import plotly.graph_objects as go
 import polars as pl
+
 from api import share_of_ojs_articles
 from data_processing import (
     articles_to_disciplines_count,

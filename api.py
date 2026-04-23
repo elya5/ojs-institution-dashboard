@@ -3,8 +3,9 @@ from itertools import chain
 
 import polars as pl
 import pyalex
-from config import OPENALEX_API_KEY
 from pyalex import Works
+
+from config import OPENALEX_API_KEY
 
 logger = logging.getLogger(__name__)
 pyalex.config.api_key = OPENALEX_API_KEY

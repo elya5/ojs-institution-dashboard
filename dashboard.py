@@ -1,6 +1,7 @@
 import logging
 
 import streamlit as st
+
 from api import ojs_article_for_institution
 from data_processing import get_journals
 from data_visualization import (

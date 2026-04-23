@@ -1,0 +1,41 @@
+[project]
+name = "ojs-insitution-dashboard"
+version = "0.1.0"
+description = "Dashboard showing information on OJS usage for an institution."
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "country-converter>=1.3.2",
+    "networkx>=3.6.1",
+    "plotly>=6.7.0",
+    "polars>=1.39.3",
+    "pyalex>=0.21",
+    "pyarrow>=23.0.1",
+    "requests>=2.33.1",
+    "streamlit>=1.56.0",
+    "tqdm>=4.67.3",
+]
+
+[tool.ruff.lint]
+select = [
+    "A",
+    "B",
+    "UP",
+    "E",
+    "F",
+    "RUF",
+    "I",
+    "UP",
+    "S",
+    "A",
+    "C4",
+    "SIM",
+    "PTH",
+    "ERA001",
+]
+
+[tool.ruff.format]
+quote-style = "single"
+indent-style = "space"
+line-ending = "auto"
+

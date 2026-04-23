@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pyalex
 import requests
+
 from config import (
     BEACON_PATH,
     DATAVERSE_API_KEY,
