@@ -62,7 +62,7 @@ if ror_id is not None and st.button('Analyze'):
     st.plotly_chart(get_share_of_ojs_articles_pie(ror_id))
     st.plotly_chart(get_ojs_article_count_line(articles))
     st.plotly_chart(get_discipline_bar(articles, ror_id))
-    st.write(
+    st.warning(
         'Small number of articles below due to testing '
         'with DOAJ and then matching with OJS journals'
     )

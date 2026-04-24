@@ -16,8 +16,8 @@ from data_processing import (
 def get_share_of_ojs_articles_pie(ror: str) -> go.Figure:
     return px.pie(
         share_of_ojs_articles(ror),
-        values='count',
-        names='key_display_name',
+        values='Count',
+        names='Publisher Software',
         title='Share of Articles in OJS',
     )
 
@@ -25,8 +25,8 @@ def get_share_of_ojs_articles_pie(ror: str) -> go.Figure:
 def get_ojs_article_count_line(articles: pl.LazyFrame) -> go.Figure:
     return px.line(
         articles_to_publication_year_count(articles),
-        x='publication_year',
-        y='id',
+        x='Publication Year',
+        y='Count',
         title='OJS Article per Year',
     )
 
@@ -35,7 +35,7 @@ def get_discipline_bar(articles: pl.LazyFrame, ror: str) -> go.Figure:
     return px.bar(
         articles_to_disciplines_count(articles, ror),
         x='Field',
-        y='count',
+        y='Count',
         color='Type',
         title='Articles per Discipline',
         barmode='group',
@@ -47,8 +47,8 @@ def get_ojs_journal_locations_bar(articles: pl.LazyFrame, ror: str) -> go.Figure
     country_code = get_country_code_for_ror(articles, ror)
     return px.bar(
         articles_to_ojs_locations(articles, country_code),
-        x='country_name',
-        y='id',
+        x='Country Name',
+        y='Count',
         color='color',
         title='Articles per OJS journal country',
     )
@@ -59,7 +59,8 @@ def __create_network_chart(graph: nx.Graph) -> go.Figure:
     pos = nx.spring_layout(graph, weight='weight', seed=42)
 
     edge_traces = []
-    for u, v in graph.edges():
+    max_weight = max(d['weight'] for _, _, d in graph.edges(data=True))
+    for u, v, d in graph.edges(data=True):
         x0, y0 = pos[u]
         x1, y1 = pos[v]
         edge_traces.append(
@@ -67,14 +68,13 @@ def __create_network_chart(graph: nx.Graph) -> go.Figure:
                 x=[x0, x1, None],
                 y=[y0, y1, None],
                 mode='lines',
-                line={'width': 1, 'color': '#888'},
+                line={'width': 0.1 + d['weight'] / max_weight * 2, 'color': '#888'},
                 hoverinfo='none',
                 showlegend=False,
             )
         )
 
     node_x, node_y, node_text, node_size = [], [], [], []
-    max_weight = max(d['weight'] for _, _, d in graph.edges(data=True))
     for node in graph.nodes():
         x, y = pos[node]
         node_x.append(x)
@@ -98,6 +98,7 @@ def __create_network_chart(graph: nx.Graph) -> go.Figure:
             'showscale': True,
             'colorbar': {'title': 'Collaboration strength'},
             'line': {'width': 1, 'color': 'white'},
+            'opacity': 1,
         },
         showlegend=False,
     )

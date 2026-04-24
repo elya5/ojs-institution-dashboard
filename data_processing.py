@@ -26,6 +26,7 @@ def articles_to_publication_year_count(df: pl.LazyFrame) -> pl.DataFrame:
         df.group_by('publication_year')
         .agg(pl.col('id').len())
         .sort('publication_year')
+        .rename({'publication_year': 'Publication Year', 'id': 'Count'})
         .collect()  # type: ignore
     )
 
@@ -35,6 +36,7 @@ def articles_to_disciplines_count(df: pl.LazyFrame, ror: str) -> pl.DataFrame:
         article_disciplines(ror)
         .rename({'key_display_name': 'Field'})
         .select('Field', 'count')
+        .rename({'count': 'Count'})
         .with_columns(pl.lit('All articles').alias('Type'))
     )
     df = (
@@ -42,10 +44,10 @@ def articles_to_disciplines_count(df: pl.LazyFrame, ror: str) -> pl.DataFrame:
         .unnest('primary_topic:field', separator=':')
         .group_by('primary_topic:field:display_name')
         .agg(pl.col('id').len())
-        .rename({'primary_topic:field:display_name': 'Field', 'id': 'count'})
-        .sort('count', descending=True)
+        .rename({'primary_topic:field:display_name': 'Field', 'id': 'Count'})
+        .sort('Count', descending=True)
         .with_columns(pl.lit('In OJS Journal').alias('Type'))
-        .select('Field', 'count', 'Type')
+        .select('Field', 'Count', 'Type')
     )
     return pl.concat([df, all_articles]).collect()  # type: ignore
 
@@ -81,7 +83,8 @@ def articles_to_ojs_locations(df: pl.LazyFrame, mark_country_code: str) -> pl.Da
             .otherwise(pl.lit('Different country'))
             .alias('color'),
         )
-        .sort('id', descending=True)
+        .rename({'id': 'Count', 'country_name': 'Country Name'})
+        .sort('Count', descending=True)
         .collect()  # type: ignore
     )
 
@@ -114,7 +117,7 @@ def articles_to_country_collab_count(articles: pl.LazyFrame) -> pl.DataFrame:
         .with_columns(
             pl.col('country_code')
             .map_elements(
-                lambda codes: list(combinations(codes, 2)),
+                lambda codes: list(combinations(sorted(codes), 2)),
                 return_dtype=pl.List(pl.List(pl.String)),
             )
             .alias('pairs')

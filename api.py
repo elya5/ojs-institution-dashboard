@@ -77,7 +77,16 @@ def share_of_ojs_articles(ror: str) -> pl.DataFrame:
         .group_by('primary_location.source.is_in_doaj')
         .get()
     )
-    return pl.DataFrame(result)
+    return (
+        pl.DataFrame(result)
+        .with_columns(
+            pl.when(pl.col('key_display_name') == 'true')
+            .then(pl.lit('OJS'))
+            .otherwise(pl.lit('Not OJS'))
+            .alias('Publisher Software')
+        )
+        .rename({'count': 'Count'})
+    )
 
 
 def article_disciplines(ror: str) -> pl.LazyFrame:
