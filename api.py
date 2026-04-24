@@ -3,9 +3,15 @@ import logging
 
 import polars as pl
 import pyalex
+import requests
 from pyalex import Works
 
-from config import ARTICLE_CACHE_PATH, MIN_PUBLICATION_YEAR, OPENALEX_API_KEY
+from config import (
+    ARTICLE_CACHE_PATH,
+    MIN_PUBLICATION_YEAR,
+    OPENALEX_API_KEY,
+    ROR_API_KEY,
+)
 
 logger = logging.getLogger(__name__)
 pyalex.config.api_key = OPENALEX_API_KEY
@@ -86,3 +92,20 @@ def article_disciplines(ror: str) -> pl.LazyFrame:
         .get(),
         schema_overrides={'count': pl.UInt32},
     )
+
+
+def get_ror_suggestions(text: str) -> list[dict]:
+    """Retrieve 50 best matches for ROR ID + name for a given input text."""
+    r = requests.get(
+        'https://api.ror.org/organizations?query=' + text,
+        headers={'Client-Id': ROR_API_KEY},
+        timeout=5,
+    )
+    raw_options = r.json()['items'][:50]
+    return [
+        {
+            'ror': o['id'],
+            'name': next(n['value'] for n in o['names'] if 'ror_display' in n['types']),
+        }
+        for o in raw_options
+    ]

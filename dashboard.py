@@ -2,7 +2,7 @@ import logging
 
 import streamlit as st
 
-from api import ojs_article_for_institution
+from api import get_ror_suggestions, ojs_article_for_institution
 from data_visualization import (
     get_country_collab_net,
     get_discipline_bar,
@@ -43,9 +43,20 @@ st.subheader('Institution Information')
 
 st.write('Only articles from 2020 onwards are considered.')
 
-ror_id = st.text_input('ROR', 'https://ror.org/0304hq317')
+institution_input = st.text_input(
+    'Institution Name or ROR', 'https://ror.org/0304hq317'
+)
+ror_id = None
+if 'ror.org' in institution_input:
+    ror_id = institution_input
+if len(institution_input) > 2:
+    options = get_ror_suggestions(institution_input)
+    option = st.selectbox(
+        'Select institution', options, format_func=lambda option: option['name']
+    )
+    ror_id = option['ror']
 
-if st.button('Analyze'):
+if ror_id is not None and st.button('Analyze'):
     articles = ojs_article_for_institution(ror_id)
 
     st.plotly_chart(get_share_of_ojs_articles_pie(ror_id))
