@@ -7,6 +7,7 @@ from api import share_of_ojs_articles
 from data_processing import (
     articles_to_country_collab_count,
     articles_to_disciplines_count,
+    articles_to_institution_collab_count,
     articles_to_ojs_locations,
     articles_to_publication_year_count,
     get_country_code_for_ror,
@@ -116,7 +117,7 @@ def __create_network_chart(graph: nx.Graph) -> go.Figure:
     return fig
 
 
-def get_country_collab_net(articles: pl.LazyFrame):
+def get_country_collab_net(articles: pl.LazyFrame) -> go.Figure:
     collabs = articles_to_country_collab_count(articles)
     G = nx.Graph()
     for row in collabs.iter_rows(named=True):
@@ -124,5 +125,66 @@ def get_country_collab_net(articles: pl.LazyFrame):
 
     fig = __create_network_chart(G)
     fig.layout.title = 'Network of Country Collaborations'
+
+    return fig
+
+
+def get_institution_collab_map(articles: pl.LazyFrame) -> go.Figure:
+    """Get world map with co-authoring institutes highlighted."""
+    threshold = 1_000
+    df = articles_to_institution_collab_count(articles)[:threshold]
+
+    nodes = pl.concat(
+        [
+            df.select('Institution 1', 'lat1', 'lng1'),
+            df.select('Institution 2', 'lat2', 'lng2').rename(
+                {'Institution 2': 'Institution 1', 'lat2': 'lat1', 'lng2': 'lng1'}
+            ),
+        ]
+    ).unique()
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scattergeo(
+            lon=nodes['lng1'],
+            lat=nodes['lat1'],
+            text=nodes['Institution 1'],
+            mode='markers',
+            marker={'size': 4, 'color': 'rgba(0, 100, 125)', 'opacity': 0.9},
+            hoverinfo='text',
+        )
+    )
+
+    max_collab = df['count'].max()
+
+    for row in df.iter_rows(named=True):
+        fig.add_trace(
+            go.Scattergeo(
+                lon=[row['lng1'], row['lng2']],
+                lat=[row['lat1'], row['lat2']],
+                mode='lines',
+                line={
+                    'width': 0.5 + 5 * (row['count'] / max_collab),
+                    'color': 'rgba(0, 100, 255, 0.4)',
+                },
+                opacity=0.6,
+                hoverinfo='none',
+            )
+        )
+
+    fig.update_layout(
+        title=f'OJS Institution Co-Authorship Network (top {threshold})',
+        showlegend=False,
+        geo={
+            'scope': 'world',
+            'projection_type': 'natural earth',
+            'showland': True,
+            'landcolor': 'rgb(240, 240, 240)',
+            'countrycolor': 'rgb(200, 200, 200)',
+            'showocean': True,
+            'oceancolor': 'rgb(220, 235, 255)',
+        },
+        height=600,
+    )
 
     return fig

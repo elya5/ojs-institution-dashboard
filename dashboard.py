@@ -6,6 +6,7 @@ from api import get_ror_suggestions, ojs_article_for_institution
 from data_visualization import (
     get_country_collab_net,
     get_discipline_bar,
+    get_institution_collab_map,
     get_ojs_article_count_line,
     get_ojs_journal_locations_bar,
     get_share_of_ojs_articles_pie,
@@ -68,3 +69,4 @@ if ror_id is not None and st.button('Analyze'):
     )
     st.plotly_chart(get_ojs_journal_locations_bar(articles, ror_id))
     st.plotly_chart(get_country_collab_net(articles))
+    st.plotly_chart(get_institution_collab_map(articles))

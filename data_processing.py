@@ -5,8 +5,8 @@ import country_converter as coco
 import polars as pl
 
 from api import article_disciplines
-from config import BEACON_PATH
-from data_loader import download_beacon_dataset
+from config import BEACON_PATH, ROR_PATH
+from data_loader import download_beacon_dataset, download_ror_dataset
 
 logger = logging.getLogger(__name__)
 
@@ -140,5 +140,66 @@ def articles_to_country_collab_count(articles: pl.LazyFrame) -> pl.DataFrame:
             .map_batches(lambda x: pl.Series(coco.convert(x, to='name_short'))),
         )
         .drop('a', 'b')
+        .collect()  # type: ignore
+    )
+
+
+def articles_to_institution_collab_count(articles: pl.LazyFrame) -> pl.DataFrame:
+    if not ROR_PATH.exists():
+        download_ror_dataset()
+
+    ror_df = (
+        pl.scan_csv(ROR_PATH)
+        .select(
+            'id',
+            'locations.geonames_details.lat',
+            'locations.geonames_details.lng',
+            'names.types.ror_display',
+        )
+        .rename(
+            {
+                'locations.geonames_details.lat': 'lat',
+                'locations.geonames_details.lng': 'lng',
+                'names.types.ror_display': 'name',
+            }
+        )
+    )
+
+    return (
+        articles.explode('authorships')
+        .unnest('authorships', separator=':')
+        .unnest('authorships:author', separator=':')
+        .filter(pl.col('authorships:institutions').list.len() > 0)
+        .with_columns(
+            pl.col('authorships:institutions').list.get(0).alias('institution')
+        )
+        .unnest('institution', separator=':')
+        .rename({'institution:ror': 'ror'})
+        .select('ror', 'id')
+        .group_by('id')
+        .agg(pl.col('ror').unique().drop_nulls())
+        .filter(pl.col('ror').list.len() >= 2)
+        .with_columns(
+            pl.col('ror')
+            .map_elements(
+                lambda codes: list(combinations(sorted(codes), 2)),
+                return_dtype=pl.List(pl.List(pl.String)),
+            )
+            .alias('pairs')
+        )
+        .explode('pairs')
+        .group_by('pairs')
+        .len()
+        .with_columns(
+            pl.col('pairs').list.get(0).alias('a'),
+            pl.col('pairs').list.get(1).alias('b'),
+        )
+        .rename({'len': 'count'})
+        .join(ror_df, left_on='a', right_on='id')
+        .rename({'name': 'Institution 1', 'lat': 'lat1', 'lng': 'lng1'})
+        .join(ror_df, left_on='b', right_on='id')
+        .rename({'name': 'Institution 2', 'lat': 'lat2', 'lng': 'lng2'})
+        .drop('a', 'b')
+        .sort('count', descending=True)
         .collect()  # type: ignore
     )
