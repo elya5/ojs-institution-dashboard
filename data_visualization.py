@@ -5,10 +5,10 @@ import polars as pl
 
 from api import share_of_ojs_articles
 from data_processing import (
+    articles_to_country_collab_count,
     articles_to_disciplines_count,
     articles_to_ojs_locations,
     articles_to_publication_year_count,
-    authors_to_country_collab_count,
     get_country_code_for_ror,
 )
 
@@ -116,7 +116,7 @@ def __create_network_chart(graph: nx.Graph) -> go.Figure:
 
 
 def get_country_collab_net(articles: pl.LazyFrame):
-    collabs = authors_to_country_collab_count(articles)
+    collabs = articles_to_country_collab_count(articles)
     G = nx.Graph()
     for row in collabs.iter_rows(named=True):
         G.add_edge(row['country_a'], row['country_b'], weight=row['count'])

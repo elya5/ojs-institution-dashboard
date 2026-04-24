@@ -96,7 +96,7 @@ def get_country_code_for_ror(articles: pl.LazyFrame, ror: str) -> str:
     )
 
 
-def authors_to_country_collab_count(articles: pl.LazyFrame) -> pl.DataFrame:
+def articles_to_country_collab_count(articles: pl.LazyFrame) -> pl.DataFrame:
     return (
         articles.explode('authorships')
         .unnest('authorships', separator=':')
