@@ -10,7 +10,6 @@ from data_processing import (
     articles_to_institution_collab_count,
     articles_to_ojs_locations,
     articles_to_publication_year_count,
-    get_country_code_for_ror,
 )
 
 
@@ -23,18 +22,22 @@ def get_share_of_ojs_articles_pie(ror: str) -> go.Figure:
     )
 
 
-def get_ojs_article_count_line(articles: pl.LazyFrame) -> go.Figure:
+def get_ojs_article_count_line(
+    articles: pl.LazyFrame, ror: str | None = None, fractional: bool = False
+) -> go.Figure:
     return px.line(
-        articles_to_publication_year_count(articles),
+        articles_to_publication_year_count(articles, fractional, ror),
         x='Publication Year',
         y='Count',
         title='OJS Article per Year',
     )
 
 
-def get_discipline_bar(articles: pl.LazyFrame, ror: str) -> go.Figure:
+def get_discipline_bar(
+    articles: pl.LazyFrame, ror: str, fractional: bool = False
+) -> go.Figure:
     return px.bar(
-        articles_to_disciplines_count(articles, ror),
+        articles_to_disciplines_count(articles, ror, fractional),
         x='Field',
         y='Count',
         color='Type',
@@ -44,10 +47,11 @@ def get_discipline_bar(articles: pl.LazyFrame, ror: str) -> go.Figure:
     )
 
 
-def get_ojs_journal_locations_bar(articles: pl.LazyFrame, ror: str) -> go.Figure:
-    country_code = get_country_code_for_ror(articles, ror)
+def get_ojs_journal_locations_bar(
+    articles: pl.LazyFrame, ror: str, fractional: bool = False
+) -> go.Figure:
     return px.bar(
-        articles_to_ojs_locations(articles, country_code),
+        articles_to_ojs_locations(articles, fractional, ror),
         x='Country Name',
         y='Count',
         color='color',
@@ -75,14 +79,14 @@ def __create_network_chart(graph: nx.Graph) -> go.Figure:
             )
         )
 
+    max_weight = max(d['weight'] for _, d in graph.nodes(data=True))
     node_x, node_y, node_text, node_size = [], [], [], []
-    for node in graph.nodes():
+    for node, data in graph.nodes(data=True):
         x, y = pos[node]
         node_x.append(x)
         node_y.append(y)
-        degree = sum(d['weight'] for _, _, d in graph.edges(node, data=True))
-        node_text.append(f'{node}<br>Total collabs: {degree}')
-        node_size.append(5 + (2 * degree / max_weight))
+        node_text.append(f'{node}<br>Total collabs: {data["weight"]}')
+        node_size.append(5 + (2 * data['weight'] / max_weight))
 
     node_trace = go.Scatter(
         x=node_x,
@@ -117,11 +121,15 @@ def __create_network_chart(graph: nx.Graph) -> go.Figure:
     return fig
 
 
-def get_country_collab_net(articles: pl.LazyFrame) -> go.Figure:
-    collabs = articles_to_country_collab_count(articles)
+def get_country_collab_net(
+    articles: pl.LazyFrame, fractional: bool = False
+) -> go.Figure:
+    collabs = articles_to_country_collab_count(articles, fractional)
     G = nx.Graph()
-    for row in collabs.iter_rows(named=True):
+    for row in collabs['edges'].iter_rows(named=True):
         G.add_edge(row['country_a'], row['country_b'], weight=row['count'])
+    for row in collabs['nodes'].iter_rows(named=True):
+        G.add_node(row['country'], weight=row['weight'])
 
     fig = __create_network_chart(G)
     fig.layout.title = 'Network of Country Collaborations'
@@ -129,35 +137,34 @@ def get_country_collab_net(articles: pl.LazyFrame) -> go.Figure:
     return fig
 
 
-def get_institution_collab_map(articles: pl.LazyFrame) -> go.Figure:
+def get_institution_collab_map(
+    articles: pl.LazyFrame, fractional: bool = False
+) -> go.Figure:
     """Get world map with co-authoring institutes highlighted."""
     threshold = 1_000
-    df = articles_to_institution_collab_count(articles)[:threshold]
+    collabs = articles_to_institution_collab_count(articles, fractional)
+    edges = collabs['edges'][:threshold]
 
-    nodes = pl.concat(
-        [
-            df.select('Institution 1', 'lat1', 'lng1'),
-            df.select('Institution 2', 'lat2', 'lng2').rename(
-                {'Institution 2': 'Institution 1', 'lat2': 'lat1', 'lng2': 'lng1'}
-            ),
-        ]
-    ).unique()
+    nodes = collabs['nodes'].filter(
+        pl.col('Institution').is_in(edges['Institution 1'].implode())
+        | pl.col('Institution').is_in(edges['Institution 2'].implode()),
+    )
 
     fig = go.Figure()
     fig.add_trace(
         go.Scattergeo(
-            lon=nodes['lng1'],
-            lat=nodes['lat1'],
-            text=nodes['Institution 1'],
+            lon=nodes['lng'],
+            lat=nodes['lat'],
+            text=nodes['Institution'],
             mode='markers',
             marker={'size': 4, 'color': 'rgba(0, 100, 125)', 'opacity': 0.9},
             hoverinfo='text',
         )
     )
 
-    max_collab = df['count'].max()
+    max_collab = edges['count'].max()
 
-    for row in df.iter_rows(named=True):
+    for row in edges.iter_rows(named=True):
         fig.add_trace(
             go.Scattergeo(
                 lon=[row['lng1'], row['lng2']],

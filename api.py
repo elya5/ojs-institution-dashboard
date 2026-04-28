@@ -33,7 +33,6 @@ def ojs_articles_by_year() -> pl.DataFrame:
 
 def ojs_article_for_institution(ror: str) -> pl.LazyFrame:
     """Fetch all OJS articles for the institution with pub year > min_year."""
-
     query = (
         Works()
         .select(
@@ -61,6 +60,49 @@ def ojs_article_for_institution(ror: str) -> pl.LazyFrame:
         for article in page:
             with ARTICLE_CACHE_PATH.open('a') as f:
                 f.write(json.dumps(article) + '\n')
+
+    logger.info('Converting.')
+    (
+        pl.scan_ndjson(ARTICLE_CACHE_PATH)
+        .rename({'id': 'work_id'})
+        .explode('authorships')
+        .unnest('authorships')
+        .unnest('author')
+        .rename({'id': 'author_id', 'display_name': 'author_name'})
+        .filter(pl.col('institutions').list.len() > 0)
+        .with_columns(pl.col('institutions').list.get(0).alias('institution'))
+        .with_columns(
+            (1 / pl.col('work_id').count().over('work_id')).alias('author_weight')
+        )
+        .unnest('institution', separator=':')
+        .unnest('primary_location')
+        .unnest('source', separator=':')
+        .unnest('primary_topic', separator=':')
+        .unnest('primary_topic:field', separator=':')
+        .rename(
+            {
+                'institution:ror': 'ror',
+                'source:issn': 'issn',
+                'primary_topic:field:display_name': 'field',
+                'institution:country_code': 'country_code',
+            }
+        )
+        .filter(
+            pl.col('ror').is_not_null(),
+            pl.col('author_id').is_not_null(),
+        )
+        .select(
+            'ror',
+            'author_id',
+            'work_id',
+            'publication_year',
+            'issn',
+            'field',
+            'country_code',
+            'author_weight',
+        )
+        .sink_parquet('cache.parquet')
+    )
 
     return pl.scan_ndjson(ARTICLE_CACHE_PATH)
 
@@ -105,6 +147,7 @@ def article_disciplines(ror: str) -> pl.LazyFrame:
 
 def get_ror_suggestions(text: str) -> list[dict]:
     """Retrieve 50 best matches for ROR ID + name for a given input text."""
+    logger.info('Getting ROR institutions.')
     r = requests.get(
         'https://api.ror.org/organizations?query=' + text,
         headers={'Client-Id': ROR_API_KEY},

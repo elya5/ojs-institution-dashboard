@@ -57,16 +57,30 @@ if len(institution_input) > 2:
     )
     ror_id = option['ror']
 
+fractional = st.toggle('Use Fractional Counting')
+
 if ror_id is not None and st.button('Analyze'):
     articles = ojs_article_for_institution(ror_id)
-
-    st.plotly_chart(get_share_of_ojs_articles_pie(ror_id))
-    st.plotly_chart(get_ojs_article_count_line(articles))
-    st.plotly_chart(get_discipline_bar(articles, ror_id))
-    st.warning(
-        'Small number of articles below due to testing '
-        'with DOAJ and then matching with OJS journals'
-    )
-    st.plotly_chart(get_ojs_journal_locations_bar(articles, ror_id))
-    st.plotly_chart(get_country_collab_net(articles))
-    st.plotly_chart(get_institution_collab_map(articles))
+    if fractional:
+        st.plotly_chart(get_ojs_article_count_line(articles, ror_id, fractional=True))
+        st.plotly_chart(get_discipline_bar(articles, ror_id, fractional=True))
+        st.warning(
+            'Small number of articles below due to testing '
+            'with DOAJ and then matching with OJS journals'
+        )
+        st.plotly_chart(
+            get_ojs_journal_locations_bar(articles, ror_id, fractional=True)
+        )
+        st.plotly_chart(get_country_collab_net(articles, fractional=True))
+        st.plotly_chart(get_institution_collab_map(articles, fractional=True))
+    else:
+        st.plotly_chart(get_share_of_ojs_articles_pie(ror_id))
+        st.plotly_chart(get_ojs_article_count_line(articles))
+        st.plotly_chart(get_discipline_bar(articles, ror_id))
+        st.warning(
+            'Small number of articles below due to testing '
+            'with DOAJ and then matching with OJS journals'
+        )
+        st.plotly_chart(get_ojs_journal_locations_bar(articles, ror_id))
+        st.plotly_chart(get_country_collab_net(articles))
+        st.plotly_chart(get_institution_collab_map(articles))
