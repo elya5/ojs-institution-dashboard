@@ -4,44 +4,91 @@ import country_converter as coco
 import polars as pl
 
 from api import article_disciplines
-from config import BEACON_PATH, ROR_PATH
-from data_loader import download_beacon_dataset, download_ror_dataset
+from config import ROR_PATH
+from data_loader import download_ror_dataset, get_journals
 
 logger = logging.getLogger(__name__)
 
 
-def get_journals() -> pl.LazyFrame:
-    """Get a dataframe of all OJS journals in the beacon.csv"""
-    logger.info('Reading OJS journals.')
-    if not BEACON_PATH.exists():
-        download_beacon_dataset()
+def get_journal_options() -> list[dict]:
+    """Get list of journals for selection in dashboard."""
+    return (
+        get_journals()
+        .filter(pl.col('total_record_count') > 100, pl.col('issn').is_not_null())
+        .select('context_name', 'issn')
+        .sort('context_name')
+        .collect()
+        .to_dicts()  # type: ignore
+    )
 
-    # TODO: filter out journals with less that X articles?
-    return pl.scan_csv(BEACON_PATH)
 
-
-def articles_to_publication_year_count(
+def articles_to_publication_year_stats(
     df: pl.LazyFrame, fractional: bool, ror: str | None = None
 ) -> pl.DataFrame:
     if fractional and ror is not None:
-        return (
+        # TODO How is this properly calculated? Divide by / sum(author_weight) as well?
+        fwci_per_year = (
             df.filter(pl.col('ror') == ror)
             .group_by('publication_year')
-            .agg(pl.col('author_weight').sum())
-            .sort('publication_year')
-            .rename({'publication_year': 'Publication Year', 'author_weight': 'Count'})
-            .collect()  # type: ignore
+            .agg((pl.col('fwci') * pl.col('author_weight')).sum().alias('Count'))
+            .rename({'publication_year': 'Publication Year'})
+            .with_columns(pl.lit('Fractional weighted FWCI').alias('Dimension'))
+            .select('Publication Year', 'Dimension', 'Count')
+            .sort('Publication Year')
         )
+        authors_works_per_year = (
+            df.filter(pl.col('ror') == ror)
+            .group_by('publication_year')
+            .agg(
+                pl.col('author_weight').sum(),
+                pl.col('author_id').unique().len().cast(pl.Float64),
+            )
+            .sort('publication_year')
+            .rename(
+                {
+                    'publication_year': 'Publication Year',
+                    'author_weight': 'Fractional Number of Publications',
+                    'author_id': 'Number of Authors (Full)',
+                }
+            )
+            .unpivot(
+                index='Publication Year', variable_name='Dimension', value_name='Count'
+            )
+        )
+        return pl.concat([authors_works_per_year, fwci_per_year]).collect()  # type: ignore
     elif fractional and ror is None:
         raise Exception('Invalid function arguments')
     else:
-        return (
-            df.group_by('publication_year')
-            .agg(pl.col('work_id').unique().len())
-            .sort('publication_year')
-            .rename({'publication_year': 'Publication Year', 'work_id': 'Count'})
-            .collect()  # type: ignore
+        fwci_per_year = (
+            df.group_by('work_id', 'publication_year')
+            .agg(pl.first('fwci').alias('fwci'))
+            .group_by('publication_year')
+            .agg(pl.col('fwci').sum())
+            .rename({'publication_year': 'Publication Year', 'fwci': 'Count'})
+            .with_columns(pl.lit('FWCI').alias('Dimension'))
+            .select('Publication Year', 'Dimension', 'Count')
+            .sort('Publication Year')
         )
+
+        authors_works_per_year = (
+            df.group_by('publication_year')
+            .agg(
+                pl.col('work_id').unique().len().cast(pl.Float64),
+                pl.col('author_id').unique().len().cast(pl.Float64),
+            )
+            .sort('publication_year')
+            .rename(
+                {
+                    'publication_year': 'Publication Year',
+                    'work_id': 'Number of Works',
+                    'author_id': 'Number of Authors',
+                }
+            )
+            .unpivot(
+                index='Publication Year', variable_name='Dimension', value_name='Count'
+            )
+        )
+        return pl.concat([authors_works_per_year, fwci_per_year]).collect()  # type: ignore
 
 
 def articles_to_disciplines_count(
@@ -98,8 +145,6 @@ def articles_to_ojs_locations(
         df = df.group_by('country_consolidated').agg(
             pl.col('author_weight').sum().alias('Count')
         )
-    elif fractional and ror is None:
-        raise Exception('Invalid function arguments')
     else:
         df = df.group_by('country_consolidated').agg(
             pl.col('work_id').unique().len().alias('Count')
@@ -185,9 +230,9 @@ def articles_to_country_collab_count(
     return {'edges': edges, 'nodes': nodes}  # type: ignore
 
 
-def articles_to_institution_collab_count(
+def articles_to_institution_count(
     articles: pl.LazyFrame, fractional: bool
-) -> dict[str, pl.DataFrame]:
+) -> pl.DataFrame:
     if not ROR_PATH.exists():
         download_ror_dataset()
 
@@ -212,24 +257,8 @@ def articles_to_institution_collab_count(
         nodes = articles.group_by('ror').agg(
             pl.col('author_weight').sum().alias('weight')
         )
-        df = articles.group_by(['work_id', 'ror']).agg(
-            pl.col('author_weight').sum().alias('ror_weight')
-        )
-        df = (
-            df.join(df, on='work_id', how='inner', suffix='_b')
-            .filter(pl.col('ror') < pl.col('ror_b'))
-            .with_columns(
-                (pl.col('ror_weight') + pl.col('ror_weight_b')).alias('pair_weight')
-            )
-        )
     else:
         nodes = articles.group_by('ror').len().rename({'len': 'weight'})
-        df = articles.select('work_id', 'ror').unique()
-        df = (
-            df.join(df, on='work_id', how='inner', suffix='_b')
-            .filter(pl.col('ror') < pl.col('ror_b'))
-            .with_columns(pl.lit(1).alias('pair_weight'))
-        )
 
     nodes = (
         nodes.join(ror_df, left_on='ror', right_on='id')
@@ -237,17 +266,91 @@ def articles_to_institution_collab_count(
         .rename({'name': 'Institution'})
         .collect()
     )
-    edges = (
-        df.group_by(['ror', 'ror_b'])
-        .agg(pl.col('pair_weight').sum().alias('count'))
-        .join(ror_df, left_on='ror', right_on='id')
-        .rename({'name': 'Institution 1', 'lat': 'lat1', 'lng': 'lng1'})
-        .join(ror_df, left_on='ror_b', right_on='id')
-        .rename({'name': 'Institution 2', 'lat': 'lat2', 'lng': 'lng2'})
-        .select(
-            'Institution 1', 'lat1', 'lng1', 'Institution 2', 'lat2', 'lng2', 'count'
+    return nodes  # type: ignore
+
+
+def get_tops_table(
+    df: pl.LazyFrame, fractional: bool = False
+) -> tuple[pl.DataFrame, pl.DataFrame]:
+    if fractional:
+        authors = (
+            df.group_by('author_id')
+            .agg(
+                pl.col('author_weight').sum(),
+                pl.col('author_name').first().alias('Author'),
+            )
+            .sort('author_weight', descending=True)
+            .rename({'author_weight': 'Fractional Publications'})
+            .limit(10)
+            .select('Author', 'Fractional Publications')
+            .collect()
         )
-        .sort('count', descending=True)
-        .collect()
+
+        institutions = (
+            df.group_by('ror')
+            .agg(pl.col('author_weight').sum(), pl.col('institution_name').first())
+            .sort('author_weight', descending=True)
+            .rename(
+                {
+                    'institution_name': 'Institution',
+                    'author_weight': 'Fractional Publications',
+                }
+            )
+            .limit(10)
+            .select('Institution', 'Fractional Publications')
+            .collect()
+        )
+    else:
+        authors = (
+            df.group_by('author_id')
+            .agg(pl.col('work_id').len(), pl.col('author_name').first())
+            .sort('work_id', descending=True)
+            .rename({'author_name': 'Author', 'work_id': 'Publications'})
+            .limit(10)
+            .select('Author', 'Publications')
+            .collect()
+        )
+        institutions = (
+            df.group_by('ror')
+            .agg(pl.col('work_id').len(), pl.col('institution_name').first())
+            .sort('work_id', descending=True)
+            .rename({'institution_name': 'Institution', 'work_id': 'Publications'})
+            .limit(10)
+            .select('Institution', 'Publications')
+            .collect()
+        )
+    return authors, institutions  # type: ignore
+
+
+def articles_to_author_countries(
+    articles: pl.LazyFrame, fractional: bool
+) -> pl.DataFrame:
+    return (
+        articles.group_by('country_code')
+        .len()
+        .with_columns(pl.col('country_code').str.to_uppercase())
+        .rename({'len': 'count', 'country_code': 'country_code'})
+        .collect()  # type: ignore
     )
-    return {'edges': edges, 'nodes': nodes}  # type: ignore
+
+
+def articles_to_journal_countries(
+    articles: pl.LazyFrame, fractional: bool
+) -> pl.DataFrame:
+    journals = (
+        get_journals()
+        .select('issn', 'country_consolidated')
+        .with_columns(pl.col('issn').str.split('\n').alias('issns'))
+        .filter(pl.col('issns').is_not_null(), pl.col('issns').list.len() > 0)
+    )
+
+    return (
+        articles.explode('issn')
+        .join(journals.explode('issns'), left_on='issn', right_on='issns')
+        .group_by('work_id')
+        .agg(pl.col('country_consolidated').first().str.to_uppercase())
+        .group_by('country_consolidated')
+        .len()
+        .rename({'len': 'count', 'country_consolidated': 'country_code'})
+        .collect()  # type: ignore
+    )

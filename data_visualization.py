@@ -1,43 +1,39 @@
+import json
+from pathlib import Path
+
 import networkx as nx
 import plotly.express as px
 import plotly.graph_objects as go
 import polars as pl
 
-from api import share_of_ojs_articles
 from data_processing import (
     articles_to_country_collab_count,
-    articles_to_disciplines_count,
-    articles_to_institution_collab_count,
     articles_to_ojs_locations,
-    articles_to_publication_year_count,
 )
 
 
-def get_share_of_ojs_articles_pie(ror: str) -> go.Figure:
+def get_share_of_ojs_articles_pie(df: pl.DataFrame) -> go.Figure:
     return px.pie(
-        share_of_ojs_articles(ror),
+        df,
         values='Count',
         names='Publisher Software',
         title='Share of Articles in OJS',
     )
 
 
-def get_ojs_article_count_line(
-    articles: pl.LazyFrame, ror: str | None = None, fractional: bool = False
-) -> go.Figure:
+def get_ojs_article_count_line(df: pl.DataFrame) -> go.Figure:
     return px.line(
-        articles_to_publication_year_count(articles, fractional, ror),
+        df,
         x='Publication Year',
         y='Count',
+        color='Dimension',
         title='OJS Article per Year',
     )
 
 
-def get_discipline_bar(
-    articles: pl.LazyFrame, ror: str, fractional: bool = False
-) -> go.Figure:
+def get_discipline_bar(df: pl.DataFrame) -> go.Figure:
     return px.bar(
-        articles_to_disciplines_count(articles, ror, fractional),
+        df,
         x='Field',
         y='Count',
         color='Type',
@@ -137,18 +133,37 @@ def get_country_collab_net(
     return fig
 
 
-def get_institution_collab_map(
-    articles: pl.LazyFrame, fractional: bool = False
-) -> go.Figure:
-    """Get world map with co-authoring institutes highlighted."""
-    threshold = 1_000
-    collabs = articles_to_institution_collab_count(articles, fractional)
-    edges = collabs['edges'][:threshold]
+def get_countries_map(df: pl.DataFrame, title: str) -> go.Figure:
+    with Path('data/world.json').open() as f:
+        geojson = json.load(f)
 
-    nodes = collabs['nodes'].filter(
-        pl.col('Institution').is_in(edges['Institution 1'].implode())
-        | pl.col('Institution').is_in(edges['Institution 2'].implode()),
+    countries = pl.DataFrame(
+        {
+            'country_code': [
+                feature['properties']['country_code']
+                for feature in geojson['features']
+                if 'country_code' in feature['properties']
+            ]
+        }
     )
+    df = countries.join(df, on='country_code', how='left').fill_null(0)
+
+    fig = px.choropleth(
+        df,
+        geojson=geojson,
+        color='count',
+        locations='country_code',
+        featureidkey='properties.country_code',
+        projection='mercator',
+    )
+    fig.update_geos(visible=False, center={'lat': 20, 'lon': 0}, projection_scale=1)
+    fig.update_layout(margin={'r': 0, 't': 30, 'l': 0, 'b': 0}, title=title)
+    return fig
+
+
+def get_institution_map(nodes: pl.DataFrame) -> go.Figure:
+    """Get world map with institutes highlighted."""
+    node_sizes = 3 + (nodes['weight'] / nodes['weight'].max()) * 10
 
     fig = go.Figure()
     fig.add_trace(
@@ -157,30 +172,19 @@ def get_institution_collab_map(
             lat=nodes['lat'],
             text=nodes['Institution'],
             mode='markers',
-            marker={'size': 4, 'color': 'rgba(0, 100, 125)', 'opacity': 0.9},
+            marker={
+                'size': node_sizes,
+                'color': nodes['weight'],
+                'colorscale': 'Viridis',
+                'opacity': 0.8,
+                'colorbar': {'title': 'Publications'},
+            },
             hoverinfo='text',
         )
     )
 
-    max_collab = edges['count'].max()
-
-    for row in edges.iter_rows(named=True):
-        fig.add_trace(
-            go.Scattergeo(
-                lon=[row['lng1'], row['lng2']],
-                lat=[row['lat1'], row['lat2']],
-                mode='lines',
-                line={
-                    'width': 0.5 + 5 * (row['count'] / max_collab),
-                    'color': 'rgba(0, 100, 255, 0.4)',
-                },
-                opacity=0.6,
-                hoverinfo='none',
-            )
-        )
-
     fig.update_layout(
-        title=f'OJS Institution Co-Authorship Network (top {threshold})',
+        title='Institution Map',
         showlegend=False,
         geo={
             'scope': 'world',

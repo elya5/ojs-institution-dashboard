@@ -4,6 +4,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+import polars as pl
 import pyalex
 import requests
 
@@ -65,3 +66,13 @@ def download_ror_dataset() -> None:
         shutil.move(csvpath, ROR_PATH)
 
     logger.info('Done.')
+
+
+def get_journals() -> pl.LazyFrame:
+    """Get a dataframe of all OJS journals in the beacon.csv"""
+    logger.info('Reading OJS journals.')
+    if not BEACON_PATH.exists():
+        download_beacon_dataset()
+
+    # TODO: filter out journals with less that X articles?
+    return pl.scan_csv(BEACON_PATH)
