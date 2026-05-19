@@ -1,7 +1,9 @@
 import hashlib
 import json
 import logging
+from itertools import chain
 
+import country_converter as coco
 import polars as pl
 import pyalex
 import requests
@@ -26,12 +28,17 @@ def ojs_articles_by_year() -> pl.DataFrame:
     works = (
         Works()
         .filter(
-            primary_location={'source': {'is_in_doaj': True}}, publication_year='>2020'
+            primary_location={'source': {'is_in_doaj': True}}, publication_year='>2010'
         )
         .group_by('publication_year')
         .get()
     )
-    return pl.DataFrame(works).rename({'key': 'Year'}).drop('key_display_name')
+    return (
+        pl.DataFrame(works)
+        .rename({'key': 'Year'})
+        .drop('key_display_name')
+        .sort('Year')
+    )
 
 
 def get_openalex_countries() -> list[dict[str, str]]:
@@ -203,23 +210,31 @@ def article_disciplines(ror: str) -> pl.LazyFrame:
 def get_ror_suggestions(text: str) -> list[dict]:
     """Retrieve 50 best matches for ROR ID + name for a given input text."""
     logger.info('Getting ROR institutions.')
-    r = requests.get(
-        'https://api.ror.org/organizations?query=' + text,
-        headers={'Client-Id': ROR_API_KEY},
-        timeout=5,
-    )
-    raw_options = r.json()['items'][:50]
-    return [
-        {
-            'ror': o['id'],
-            'name': next(n['value'] for n in o['names'] if 'ror_display' in n['types']),
-        }
-        for o in raw_options
-    ]
+    if len(text) < 2:
+        return []
+    try:
+        r = requests.get(
+            'https://api.ror.org/organizations?query=' + text,
+            headers={'Client-Id': ROR_API_KEY},
+            timeout=5,
+        )
+        raw_options = r.json()['items'][:50]
+        print(raw_options)
+        return [
+            {
+                'ror': o['id'],
+                'name': next(
+                    n['value'] for n in o['names'] if 'ror_display' in n['types']
+                ),
+            }
+            for o in raw_options
+        ]
+    except Exception:
+        return []
 
 
 def get_tops_table_country(country_code: str) -> tuple[pl.DataFrame, pl.DataFrame]:
-    query = (
+    result = (
         Works()
         .filter(
             primary_location={'source': {'is_in_doaj': True}},
@@ -227,8 +242,8 @@ def get_tops_table_country(country_code: str) -> tuple[pl.DataFrame, pl.DataFram
             authorships={'countries': country_code},
         )
         .group_by('authorships.author.id')
+        .get()
     )
-    result = query.get()
     authors = (
         pl.DataFrame(result)
         .select('key_display_name', 'count')
@@ -236,7 +251,7 @@ def get_tops_table_country(country_code: str) -> tuple[pl.DataFrame, pl.DataFram
         .limit(10)
     )
 
-    query = (
+    result = (
         Works()
         .filter(
             primary_location={'source': {'is_in_doaj': True}},
@@ -244,8 +259,8 @@ def get_tops_table_country(country_code: str) -> tuple[pl.DataFrame, pl.DataFram
             authorships={'countries': country_code},
         )
         .group_by('authorships.institutions.id')
+        .get()
     )
-    result = query.get()
     institutions = (
         pl.DataFrame(result)
         .select('key_display_name', 'count')
@@ -256,15 +271,15 @@ def get_tops_table_country(country_code: str) -> tuple[pl.DataFrame, pl.DataFram
 
 
 def share_of_ojs_articles_country(country_code: str) -> pl.DataFrame:
-    query = (
+    result = (
         Works()
         .filter(
             publication_year=f'>{MIN_PUBLICATION_YEAR - 1}',
             authorships={'countries': country_code},
         )
         .group_by('primary_location.source.is_in_doaj')
+        .get()
     )
-    result = query.get()
     return (
         pl.DataFrame(result)
         .with_columns(
@@ -293,6 +308,7 @@ def publications_per_year_country(country_code: str) -> pl.DataFrame:
         .rename({'key': 'Publication Year', 'count': 'Count'})
         .drop('key_display_name')
         .with_columns(pl.lit('Number of Works').alias('Dimension'))
+        .sort('Publication Year')
     )
 
 
@@ -315,7 +331,7 @@ def publication_per_discipline_country(country_code: str) -> pl.DataFrame:
     )
 
 
-def publications_per_institutions_locations(country_code: str) -> pl.DataFrame:
+def author_countries(country_code: str) -> pl.DataFrame:
     result = (
         Works()
         .filter(
@@ -323,9 +339,27 @@ def publications_per_institutions_locations(country_code: str) -> pl.DataFrame:
             publication_year='>2020',
             authorships={'countries': country_code},
         )
-        .group_by('authorships.institutions.ror')
+        .group_by('authorships.institutions.country_code')
         .get()
     )
+    return (
+        pl.DataFrame(result)
+        .rename({'key_display_name': 'Country'})
+        .with_columns(pl.col('key').str.split('/').list.get(-1).alias('country_code'))
+    )
+
+
+def publications_per_institutions_locations(country_code: str) -> pl.DataFrame:
+    query = (
+        Works()
+        .filter(
+            primary_location={'source': {'is_in_doaj': True}},
+            publication_year='>2020',
+            authorships={'countries': country_code},
+        )
+        .group_by('authorships.institutions.ror')
+    )
+    result = list(chain(*query.paginate(per_page=200)))
 
     ror_df = (
         pl.read_csv(ROR_PATH)
@@ -349,11 +383,12 @@ def publications_per_institutions_locations(country_code: str) -> pl.DataFrame:
         .join(ror_df, left_on='key', right_on='id')
         .select('count', 'name', 'lat', 'lng')
         .rename({'name': 'Institution', 'count': 'weight'})
+        .sort('weight', descending=True)
     )
 
 
 def publication_to_journal_location_country(country_code: str) -> pl.DataFrame:
-    result = (
+    query = (
         Works()
         .filter(
             primary_location={'source': {'is_in_doaj': True}},
@@ -361,8 +396,8 @@ def publication_to_journal_location_country(country_code: str) -> pl.DataFrame:
             authorships={'countries': country_code},
         )
         .group_by('primary_location.source.issn')
-        .get()
     )
+    result = list(chain(*query.paginate(per_page=200)))
 
     journals = (
         get_journals()
@@ -384,4 +419,11 @@ def publication_to_journal_location_country(country_code: str) -> pl.DataFrame:
         .group_by('country_consolidated')
         .agg(pl.col('count').sum())
         .rename({'country_consolidated': 'country_code'})
+        .sort('count', descending=True)
+        .filter(pl.col('country_code').is_not_null())
+        .with_columns(
+            pl.col('country_code')
+            .alias('Country')
+            .map_batches(lambda x: pl.Series(coco.convert(x, to='name_short'))),
+        )
     )

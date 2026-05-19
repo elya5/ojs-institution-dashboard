@@ -3,7 +3,7 @@ import logging
 import country_converter as coco
 import polars as pl
 
-from api import article_disciplines
+from api import article_disciplines, ojs_articles_by_year
 from config import ROR_PATH
 from data_loader import download_ror_dataset, get_journals
 
@@ -20,6 +20,22 @@ def get_journal_options() -> list[dict]:
         .collect()
         .to_dicts()  # type: ignore
     )
+
+
+def ojs_journals_stats() -> dict[str, int]:
+    countries = get_journals().group_by('country_consolidated').len().collect().shape[0]  # type: ignore
+    journals = (
+        get_journals()
+        .filter(
+            (pl.col('record_count_2023') > 0)
+            | (pl.col('record_count_2024') > 0)
+            | (pl.col('record_count_2025') > 0)
+        )
+        .collect()
+        .shape[0]  # type: ignore
+    )
+    articles = int(ojs_articles_by_year()['count'].sum())
+    return {'journals': journals, 'articles': articles, 'countries': countries}
 
 
 def articles_to_publication_year_stats(
@@ -143,11 +159,11 @@ def articles_to_ojs_locations(
 
     if fractional and ror is not None:
         df = df.group_by('country_consolidated').agg(
-            pl.col('author_weight').sum().alias('Count')
+            pl.col('author_weight').sum().alias('count')
         )
     else:
         df = df.group_by('country_consolidated').agg(
-            pl.col('work_id').unique().len().alias('Count')
+            pl.col('work_id').unique().len().alias('count')
         )
 
     return (
@@ -163,8 +179,8 @@ def articles_to_ojs_locations(
             .otherwise(pl.lit('Different country'))
             .alias('color'),
         )
-        .rename({'country_name': 'Country Name'})
-        .sort('Count', descending=True)
+        .rename({'country_name': 'Country', 'country_consolidated': 'country_code'})
+        .sort('count', descending=True)
         .collect()
     )
 
@@ -280,9 +296,9 @@ def get_tops_table(
                 pl.col('author_name').first().alias('Author'),
             )
             .sort('author_weight', descending=True)
-            .rename({'author_weight': 'Fractional Publications'})
+            .rename({'author_weight': 'Publications'})
             .limit(10)
-            .select('Author', 'Fractional Publications')
+            .select('Author', 'Publications')
             .collect()
         )
 
@@ -293,11 +309,11 @@ def get_tops_table(
             .rename(
                 {
                     'institution_name': 'Institution',
-                    'author_weight': 'Fractional Publications',
+                    'author_weight': 'Publications',
                 }
             )
             .limit(10)
-            .select('Institution', 'Fractional Publications')
+            .select('Institution', 'Publications')
             .collect()
         )
     else:
@@ -329,8 +345,14 @@ def articles_to_author_countries(
         articles.group_by('country_code')
         .len()
         .with_columns(pl.col('country_code').str.to_uppercase())
-        .rename({'len': 'count', 'country_code': 'country_code'})
-        .collect()  # type: ignore
+        .rename({'len': 'count'})
+        .with_columns(
+            pl.col('country_code')
+            .alias('Country')
+            .map_batches(lambda x: pl.Series(coco.convert(x, to='name_short'))),
+        )
+        .sort('count', descending=True)
+        .collect()
     )
 
 
