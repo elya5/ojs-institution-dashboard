@@ -19,7 +19,7 @@
   const props = defineProps({
     data: {
       type: Array,
-      required: true
+      required: true,
     },
   })
 </script>

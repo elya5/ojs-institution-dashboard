@@ -4,7 +4,7 @@
       Open Journal Systems (OJS) is a free, open-source platform developed by the
       Public Knowledge Project (PKP) that powers scholarly journal publishing from
       submission through peer review to online publication.
-      <br />
+      <br>
       This dashboard presents information on OJS usage worldwide, highlighting the
       platform’s growing adoption across regions, disciplines, and publishing
       communities. It is intended to illustrate the increasing popularity and

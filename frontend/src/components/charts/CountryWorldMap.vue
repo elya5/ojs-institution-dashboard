@@ -56,7 +56,7 @@
     if (!mapReady.value) return {}
 
     const countryNameMap = new Map(
-      world.value.features.map(f => ([f.properties.country_code, f.properties.name]))
+      world.value.features.map(f => ([f.properties.country_code, f.properties.name])),
     )
     const mapData = props.data.map(d => ({
       name: countryNameMap.get(d[props.dataKey]),

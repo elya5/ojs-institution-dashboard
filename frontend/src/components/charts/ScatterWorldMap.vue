@@ -42,7 +42,7 @@
       default: 500,
     },
     dataKey: String,
-    dataValue: String
+    dataValue: String,
   })
 
   const mapReady = ref(false)

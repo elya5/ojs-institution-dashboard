@@ -1,14 +1,13 @@
-import router from '../router';
-import {createPinia} from 'pinia';
+// Types
+import type { App } from 'vue'
+import { createPinia } from 'pinia'
 /**
  * plugins/index.ts
  *
  * Automatically included in `./src/main.ts`
  */
 
-// Types
-import type { App } from 'vue'
-
+import router from '../router'
 // Plugins
 import vuetify from './vuetify'
 
