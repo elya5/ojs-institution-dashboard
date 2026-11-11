@@ -1,6 +1,6 @@
 <template>
   <VChart
-  autoresize
+    autoresize
     class="chart"
     :option="option"
     :style="{ height: height + 'px' }"
@@ -66,6 +66,7 @@
     })
 
     return {
+      color: ['#9f0712', '#fbb369', '#2c5669'],
       tooltip: {
         trigger: 'axis',
       },

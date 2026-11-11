@@ -14,3 +14,4 @@ wheels/
 *.csv
 *.json
 *.parquet
+.env

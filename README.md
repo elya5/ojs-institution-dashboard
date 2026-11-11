@@ -1,19 +1,27 @@
-# OJS Insitution Dashboard
+---
+title: OJS Institution Dashboard
+emoji: 📊
+colorFrom: indigo
+colorTo: purple
+sdk: docker
+app_port: 7860
+pinned: false
+---
 
-This streamlit dashboard shows information how researchers at an institution are using [OJS](https://pkp.sfu.ca/software/ojs/) journals.
+# OJS Dashboard
+
+This dashboard shows information how researchers are using [OJS](https://pkp.sfu.ca/software/ojs/) journals.
 The data comes from [OpenAlex](https://openalex.org/), [ROR](https://ror.org/) and the OJS Beacon.
 All data sources are openly available.
-The dashboard is deployed here: [ojs-institution-dashboard.streamlit.app](https://ojs-institution-dashboard.streamlit.app/)
 
-To run the project, first set the environment variables in `.streamlit/secrets.toml`:
-```
-DATAVERSE_API_KEY="<your_key>"
-OPENALEX_API_KEY="<your_key>"
-ROR_API_KEY="<your_key>"
-```
-
-Then run with:
+Run the server with:
 ```
 $ uv sync
-$ uv run streamlit run dashboard.py
+$ uv run fastapi run server.py
+```
+
+and the frontend with:
+```
+$ npm install
+$ npm run dev
 ```

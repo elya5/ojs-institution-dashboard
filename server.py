@@ -1,14 +1,20 @@
+import asyncio
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from cashews import cache
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 from api import (
     author_countries,
     get_openalex_countries,
     get_ror_suggestions,
     get_tops_table_country,
+    ojs_all_languages,
+    ojs_all_metadata,
+    ojs_all_topics,
     ojs_article_for_institution,
     ojs_articles_by_year,
     ojs_articles_for_journal,
@@ -23,10 +29,12 @@ from data_processing import (
     articles_to_author_countries,
     articles_to_disciplines_count,
     articles_to_institution_count,
+    articles_to_languages,
     articles_to_ojs_locations,
     articles_to_publication_year_stats,
     get_journal_options,
     get_tops_table,
+    journal_countries,
     ojs_journals_stats,
 )
 
@@ -58,17 +66,30 @@ async def list_journals():
     return get_journal_options()
 
 
-@app.get(
-    '/all-articles-yearly', summary='Get how many OJS articles were published yearly'
-)
+@app.get('/index', summary='Get general OJS article information')
 @cache(ttl='24h')
-async def get_all_ojs_articles_per_year():
-    return ojs_articles_by_year().to_dicts()
+async def get_index():
+    yearly_articles, stats, topics, languages, countries = await asyncio.gather(
+        asyncio.to_thread(ojs_articles_by_year),
+        asyncio.to_thread(ojs_journals_stats),
+        asyncio.to_thread(ojs_all_topics),
+        asyncio.to_thread(ojs_all_languages),
+        asyncio.to_thread(journal_countries),
+    )
+
+    return {
+        'yearly_articles': yearly_articles.to_dicts(),
+        'stats': stats,
+        'topics': topics.to_dicts(),
+        'languages': languages.to_dicts(),
+        'countries': countries.to_dicts(),
+    }
 
 
-@app.get('/get-ojs-journals-stats', summary='Get counts for all OJS journals/articles')
-def get_ojs_journals_stats():
-    return ojs_journals_stats()
+@app.get('/metadata_quality', summary='Get metadata quality in OpenAlex on OJS')
+@cache(ttl='24h')
+async def get_metadata_quality():
+    return ojs_all_metadata()
 
 
 @app.get('/list-countries', summary='List all countries in OpenAelx')
@@ -108,8 +129,6 @@ async def institution_analsis(
 ):
     articles = ojs_article_for_institution(institution)
 
-    table_authors, table_institutions = get_tops_table(articles, fractional=fractional)
-
     ojs_share = None
     if not fractional:
         ojs_share = share_of_ojs_articles(institution).to_dicts()
@@ -124,12 +143,12 @@ async def institution_analsis(
         'journal_locations': articles_to_ojs_locations(
             articles, fractional, institution
         ).to_dicts(),
-        'institutions': articles_to_institution_count(
-            articles, fractional=fractional
-        ).to_dicts(),
+        'countries': articles_to_author_countries(articles, False).to_dicts(),
+        'languages': articles_to_languages(articles).to_dicts(),
+        'institutions': articles_to_institution_count(articles, fractional=fractional)[
+            :1000
+        ].to_dicts(),
         'ojs_share': ojs_share,
-        'top_authors': table_authors.to_dicts(),
-        'top_institutions': table_institutions.to_dicts(),
     }
 
 
@@ -148,7 +167,7 @@ async def journal_analsis(
     fractional: bool = Query(..., description='Whether fractional or full counting'),
     journal: str = Query(..., description='ISSNs of journals to analyse'),
 ):
-    articles = ojs_articles_for_journal(journal.split('\n'))
+    articles = ojs_articles_for_journal(journal.replace('\\n', '\n').split('\n'))
     table_authors, table_institutions = get_tops_table(articles, fractional=fractional)
     return {
         'yearly_stats': articles_to_publication_year_stats(
@@ -161,3 +180,12 @@ async def journal_analsis(
         ).to_dicts(),
         'institutions': articles_to_institution_count(articles, fractional).to_dicts(),
     }
+
+
+@app.get('/{full_path:path}', include_in_schema=False)
+async def serve_frontend(full_path: str):
+    dist = Path(__file__).parent / 'frontend' / 'dist'
+    candidate = (dist / full_path).resolve()
+    if full_path and candidate.is_file() and candidate.is_relative_to(dist.resolve()):
+        return FileResponse(candidate)
+    return FileResponse(dist / 'index.html')  # SPA fallback

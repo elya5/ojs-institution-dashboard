@@ -29,7 +29,7 @@
 
       <disciplines-tile :data="countryData.disciplines" />
 
-      <author-institution-tile :data="countryData.institutions"/>
+      <author-institution-tile :data="countryData.institutions" />
 
       <top-authors-tile :data="countryData.top_authors" />
 
@@ -42,6 +42,7 @@
 
 <script setup>
   import { onMounted, ref, watch } from 'vue'
+  import { apiGet } from '@/api'
   import AuthorCountriesTile from '@/components/AuthorCountriesTile.vue'
   import AuthorInstitutionTile from '@/components/AuthorInstitutionTile.vue'
   import DisciplinesTile from '@/components/DisciplinesTile.vue'
@@ -55,8 +56,7 @@
   const countryData = ref(null)
 
   onMounted(async () => {
-    const res = await fetch('http://localhost:8000/list-countries')
-    countries.value = await res.json()
+    countries.value = await apiGet('/list-countries')
   })
 
   watch(selectedCountry, fetchData)
@@ -64,8 +64,7 @@
   async function fetchData () {
     loading.value = true
 
-    const res = await fetch('http://localhost:8000/country-analysis/' + selectedCountry.value)
-    countryData.value = await res.json()
+    countryData.value = await apiGet('/country-analysis/' + selectedCountry.value)
 
     loading.value = false
   }

@@ -75,13 +75,16 @@
         silent: true,
         scaleLimit: {
           min: 1,
-          max: 20,
+          max: 4,
         },
         itemStyle: {
           areaColor: '#e5e7eb',
           borderColor: '#9ca3af',
         },
         emphasis: {
+          label: {
+            show: false,
+          },
           itemStyle: {
             areaColor: '#d1d5db',
           },
@@ -102,7 +105,7 @@
         controller: {
           inRange: {
             symbolSize: [4, 25],
-            color: ['#93c5fd', '#2563eb'],
+            color: ['#9f0712', '#9f0712'],
           },
         },
       },
@@ -111,7 +114,7 @@
           type: 'scatter',
           coordinateSystem: 'geo',
           geoIndex: 0,
-          data: props.data.map((d) => [
+          data: props.data.map(d => [
             d.lng,
             d.lat,
             d[props.dataValue],
@@ -120,12 +123,11 @@
           emphasis: {
             focus: 'series',
             label: {
-              show: true,
-              formatter: param => param.data[3],
+              show: false,
             },
           },
           itemStyle: {
-            color: '#3b82f6',
+            color: '#9f0712',
           },
         },
       ],

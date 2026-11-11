@@ -1,39 +1,29 @@
 <template>
   <v-app>
-    <v-app-bar>
-      <v-app-bar-nav-icon variant="text" @click.stop="drawer = !drawer" />
-      <v-app-bar-title>OJS Dashboard</v-app-bar-title>
-    </v-app-bar>
+    <v-container max-width="900">
+      <h1 class="mb-4 text-4xl text-red-800">Open Journal System Dashboard</h1>
 
-    <v-navigation-drawer
-      v-model="drawer"
-      :location="$vuetify.display.mobile ? 'bottom' : undefined"
-      temporary
-    >
-      <v-list activatable :items="items" @click:activate="navClicked" />
-    </v-navigation-drawer>
+      <div>
+        <v-btn class="me-1" :to="{ name: '/'}" variant="text">
+          General
+        </v-btn>
 
-    <v-main>
+        <v-btn class="me-1" :to="{ name: '/institution'}" variant="text">
+          Institutions
+        </v-btn>
+
+        <v-btn class="me-1" :to="{ name: '/journal'}" variant="text">
+          Journals
+        </v-btn>
+
+        <v-btn class="me-1" :to="{ name: '/method'}" variant="text">
+          Method
+        </v-btn>
+      </div>
+    </v-container>
+
+    <v-main class="bg-gray-50 border-t border-gray-200">
       <router-view />
     </v-main>
   </v-app>
 </template>
-
-<script setup>
-  import { ref } from 'vue'
-  import { useRouter } from 'vue-router'
-
-  const router = useRouter()
-
-  const drawer = ref(false)
-  const items = ref([
-    { title: 'Start', value: '/' },
-    { title: 'Country Analysis', value: '/country' },
-    { title: 'Institution Analysis', value: '/institution' },
-    { title: 'Journal Analysis', value: '/journal' },
-  ])
-
-  function navClicked (item) {
-    router.push(item.id)
-  }
-</script>

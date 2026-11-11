@@ -48,6 +48,7 @@
     },
     series: [
       {
+        color: ['#fbb369', '#9f0712'],
         type: 'pie',
         radius: '50%',
         data: props.data.map(d => ({

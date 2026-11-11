@@ -66,6 +66,7 @@
     const values = mapData.map(d => d.value)
 
     return {
+      color: ['#9f0712'],
       tooltip: {
         trigger: 'item',
         formatter: params => {
@@ -89,7 +90,7 @@
         bottom: 20,
         text: ['High', 'Low'],
         inRange: {
-          color: ['#bfdbfe', '#2563eb'],
+          color: ['#ffcbcb', '#9f0712'],
         },
         outOfRange: {
           color: '#e5e7eb', // grey for no-data regions
@@ -103,7 +104,7 @@
           roam: true,
           scaleLimit: {
             min: 1,
-            max: 20,
+            max: 4,
           },
           missingDataColor: '#000000',
 
@@ -115,10 +116,10 @@
 
           emphasis: {
             label: {
-              show: true,
+              show: false,
             },
             itemStyle: {
-              areaColor: '#1d4ed8',
+              areaColor: '#EEE',
             },
           },
 

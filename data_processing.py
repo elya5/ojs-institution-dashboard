@@ -3,7 +3,7 @@ import logging
 import country_converter as coco
 import polars as pl
 
-from api import article_disciplines, ojs_articles_by_year
+from api import article_disciplines, get_openalex_languages, ojs_articles_by_year
 from config import ROR_PATH
 from data_loader import download_ror_dataset, get_journals
 
@@ -14,28 +14,34 @@ def get_journal_options() -> list[dict]:
     """Get list of journals for selection in dashboard."""
     return (
         get_journals()
-        .filter(pl.col('total_record_count') > 100, pl.col('issn').is_not_null())
+        .filter(
+            pl.col('total_record_count') > 100,
+            pl.col('issn').is_not_null(),
+            pl.col('issn').str.len_chars() > 7,
+        )
         .select('context_name', 'issn')
         .sort('context_name')
         .collect()
-        .to_dicts()  # type: ignore
+        .to_dicts()
     )
 
 
 def ojs_journals_stats() -> dict[str, int]:
-    countries = get_journals().group_by('country_consolidated').len().collect().shape[0]  # type: ignore
-    journals = (
-        get_journals()
-        .filter(
-            (pl.col('record_count_2023') > 0)
-            | (pl.col('record_count_2024') > 0)
-            | (pl.col('record_count_2025') > 0)
-        )
-        .collect()
-        .shape[0]  # type: ignore
-    )
+    countries = get_journals().group_by('country').len().collect().shape[0]
+    journals = get_journals().collect().shape[0]
     articles = int(ojs_articles_by_year()['count'].sum())
     return {'journals': journals, 'articles': articles, 'countries': countries}
+
+
+def journal_countries() -> pl.DataFrame:
+    return (
+        get_journals()
+        .group_by('country_code')
+        .len()
+        .rename({'len': 'count'})
+        .filter(pl.col.country_code.str.len_chars() < 3)  # filter out 'not found'
+        .collect()
+    )
 
 
 def articles_to_publication_year_stats(
@@ -71,7 +77,7 @@ def articles_to_publication_year_stats(
                 index='Publication Year', variable_name='Dimension', value_name='Count'
             )
         )
-        return pl.concat([authors_works_per_year, fwci_per_year]).collect()  # type: ignore
+        return pl.concat([authors_works_per_year, fwci_per_year]).collect()
     elif fractional and ror is None:
         raise Exception('Invalid function arguments')
     else:
@@ -104,7 +110,11 @@ def articles_to_publication_year_stats(
                 index='Publication Year', variable_name='Dimension', value_name='Count'
             )
         )
-        return pl.concat([authors_works_per_year, fwci_per_year]).collect()  # type: ignore
+        return pl.concat(
+            [
+                authors_works_per_year,
+            ]
+        ).collect()
 
 
 def articles_to_disciplines_count(
@@ -119,7 +129,7 @@ def articles_to_disciplines_count(
             .sort('Count', descending=True)
             .with_columns(pl.lit('In OJS Journal').alias('Type'))
             .select('Field', 'Count', 'Type')
-            .collect()  # type: ignore
+            .collect()
         )
     else:
         all_articles = (
@@ -137,7 +147,7 @@ def articles_to_disciplines_count(
             .with_columns(pl.lit('In OJS Journal').alias('Type'))
             .select('Field', 'Count', 'Type')
         )
-        return pl.concat([df, all_articles]).collect()  # type: ignore
+        return pl.concat([df, all_articles]).collect()
 
 
 def articles_to_ojs_locations(
@@ -146,7 +156,8 @@ def articles_to_ojs_locations(
     mark_country_code = get_country_code_for_ror(df, ror)
     journals = (
         get_journals()
-        .select('issn', 'country_consolidated')
+        .select('issn', 'country_code', 'country')
+        .rename({'country_code': 'journal_country_code', 'country': 'journal_country'})
         .with_columns(pl.col('issn').str.split('\n').alias('issns'))
         .filter(pl.col('issns').is_not_null(), pl.col('issns').list.len() > 0)
     )
@@ -158,92 +169,30 @@ def articles_to_ojs_locations(
     )
 
     if fractional and ror is not None:
-        df = df.group_by('country_consolidated').agg(
+        df = df.group_by('journal_country_code', 'journal_country').agg(
             pl.col('author_weight').sum().alias('count')
         )
     else:
-        df = df.group_by('country_consolidated').agg(
+        df = df.group_by('journal_country_code', 'journal_country').agg(
             pl.col('work_id').unique().len().alias('count')
         )
 
     return (
-        df.with_columns(
-            pl.col('country_consolidated')
-            .alias('country_name')
-            .map_batches(
-                lambda s: pl.Series(coco.convert(s, to='name_short')),
-                return_dtype=pl.Utf8,
-            ),
-            pl.when(pl.col('country_consolidated') == mark_country_code)
+        df.filter(pl.col.journal_country_code.str.len_chars() < 3)
+        .with_columns(
+            pl.when(pl.col('journal_country_code') == mark_country_code)
             .then(pl.lit('Same country'))
             .otherwise(pl.lit('Different country'))
             .alias('color'),
         )
-        .rename({'country_name': 'Country', 'country_consolidated': 'country_code'})
+        .rename({'journal_country': 'Country'})
         .sort('count', descending=True)
         .collect()
     )
 
 
 def get_country_code_for_ror(articles: pl.LazyFrame, ror: str) -> str:
-    return articles.filter(pl.col('ror') == ror).head(1).collect()['country_code'][0]  # type:ignore
-
-
-def articles_to_country_collab_count(
-    articles: pl.LazyFrame, fractional: bool
-) -> dict[str, pl.DataFrame]:
-    if fractional:
-        # TODO: how to measure edge for fractional counting
-        nodes = articles.group_by('country_code').agg(
-            pl.col('author_weight').sum().alias('weight')
-        )
-        df = articles.group_by(['work_id', 'country_code']).agg(
-            pl.col('author_weight').sum().alias('country_weight')
-        )
-        df = (
-            df.join(df, on='work_id', how='inner', suffix='_b')
-            .filter(pl.col('country_code') < pl.col('country_code_b'))
-            .with_columns(
-                (pl.col('country_weight') + pl.col('country_weight_b')).alias(
-                    'pair_weight'
-                )
-            )
-        )
-    else:
-        nodes = articles.group_by('country_code').len().rename({'len': 'weight'})
-        df = articles.select('work_id', 'country_code').unique()
-        df = (
-            df.join(df, on='work_id', how='inner', suffix='_b')
-            .filter(pl.col('country_code') < pl.col('country_code_b'))
-            .with_columns(pl.lit(1).alias('pair_weight'))
-        )
-
-    nodes = (
-        nodes.with_columns(
-            pl.col('country_code')
-            .alias('country')
-            .map_batches(lambda x: pl.Series(coco.convert(x, to='name_short'))),
-        )
-        .filter(pl.col('country') != 'not found')
-        .select('weight', 'country')
-        .collect()
-    )
-    edges = (
-        df.group_by(['country_code', 'country_code_b'])
-        .agg(pl.col('pair_weight').sum().alias('count'))
-        .sort('count', descending=True)
-        .with_columns(
-            pl.col('country_code')
-            .alias('country_a')
-            .map_batches(lambda x: pl.Series(coco.convert(x, to='name_short'))),
-            pl.col('country_code_b')
-            .alias('country_b')
-            .map_batches(lambda x: pl.Series(coco.convert(x, to='name_short'))),
-        )
-        .select('country_a', 'country_b', 'count')
-        .collect()
-    )
-    return {'edges': edges, 'nodes': nodes}  # type: ignore
+    return articles.filter(pl.col('ror') == ror).head(1).collect()['country_code'][0]
 
 
 def articles_to_institution_count(
@@ -282,7 +231,7 @@ def articles_to_institution_count(
         .rename({'name': 'Institution'})
         .collect()
     )
-    return nodes  # type: ignore
+    return nodes
 
 
 def get_tops_table(
@@ -335,7 +284,7 @@ def get_tops_table(
             .select('Institution', 'Publications')
             .collect()
         )
-    return authors, institutions  # type: ignore
+    return authors, institutions
 
 
 def articles_to_author_countries(
@@ -361,7 +310,8 @@ def articles_to_journal_countries(
 ) -> pl.DataFrame:
     journals = (
         get_journals()
-        .select('issn', 'country_consolidated')
+        .select('issn', 'country_code')
+        .rename({'country_code': 'journal_country'})
         .with_columns(pl.col('issn').str.split('\n').alias('issns'))
         .filter(pl.col('issns').is_not_null(), pl.col('issns').list.len() > 0)
     )
@@ -370,9 +320,22 @@ def articles_to_journal_countries(
         articles.explode('issn')
         .join(journals.explode('issns'), left_on='issn', right_on='issns')
         .group_by('work_id')
-        .agg(pl.col('country_consolidated').first().str.to_uppercase())
-        .group_by('country_consolidated')
+        .agg(pl.col('journal_country').first().str.to_uppercase())
+        .group_by('journal_country')
         .len()
-        .rename({'len': 'count', 'country_consolidated': 'country_code'})
-        .collect()  # type: ignore
+        .rename({'len': 'count', 'journal_country': 'country_code'})
+        .collect()
+    )
+
+
+def articles_to_languages(articles: pl.LazyFrame) -> pl.DataFrame:
+    return (
+        articles.group_by('language')
+        .agg(pl.col('work_id').len().alias('Count'))
+        .filter(pl.col('language').is_not_null())
+        .collect()
+        .join(get_openalex_languages(), left_on='language', right_on='key')
+        .select('key_display_name', 'Count')
+        .rename({'key_display_name': 'language'})
+        .sort('Count', descending=True)
     )

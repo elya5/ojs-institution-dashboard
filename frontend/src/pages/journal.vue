@@ -5,7 +5,7 @@
 
       <v-progress-circular
         v-if="loading"
-        class="ms-10"
+        class="ms-10 mt-5"
         color="primary"
         indeterminate
         :size="50"
@@ -22,38 +22,62 @@
       item-title="context_name"
       item-value="issn"
       :items="journalSuggestions"
-      label="Journal"
-      placeholder="Select journal..."
+      label="Journal Name"
+      placeholder="Type to start searching..."
+      return-object
+      variant="outlined"
       @update:model-value="analyseJournal"
     />
 
-    <v-expansion-panels class="mt-5">
-      <v-expansion-panel title="Options">
-        <v-expansion-panel-text>
-          <v-switch v-model="fractional" label="Fractional Counting" />
-        </v-expansion-panel-text>
-      </v-expansion-panel>
-    </v-expansion-panels>
-  </v-container>
+    <div v-if="!loading && data" class="mt-15">
+      <v-card class="bg-white border-gray-200 m-2" variant="outlined">
+        <v-card-title>Yearly Development</v-card-title>
 
-  <v-container>
-    <div v-if="!loading && data" class="flex flex-wrap gap-5">
-      <yearly-stats-tile :data="data.yearly_stats" />
+        <v-card-text>
+          <line-chart
+            :data="data.yearly_stats"
+            data-dimension="Dimension"
+            data-key="Publication Year"
+            data-value="Count"
+            :height="400"
+          />
+        </v-card-text>
+      </v-card>
 
-      <top-authors-tile :data="data.top_authors" />
+      <v-card class="bg-white border-gray-200 m-2 mt-4" variant="outlined">
+        <v-card-title>Author Countries</v-card-title>
 
-      <author-countries-tile :data="data.author_countries" />
+        <v-card-text>
+          <country-world-map
+            :data="data.author_countries"
+            data-key="country_code"
+            data-value="count"
+          />
+        </v-card-text>
+      </v-card>
 
-      <author-institution-tile :data="data.institutions" />
+      <v-card class="bg-white border-gray-200 m-2 mt-4" variant="outlined">
+        <v-card-title>Author Institutions</v-card-title>
+
+        <v-card-text>
+          <span class="text-xs text-gray-500">The top 500 institutions are shown.</span>
+
+          <scatter-world-map
+            :data="data.institutions.toSorted((a, b) => b.weight - a.weight).slice(0, 500)"
+            data-key="Institution"
+            data-value="weight"
+          />
+        </v-card-text>
+      </v-card>
     </div>
   </v-container>
 </template>
 <script setup>
   import { onMounted, ref, watch } from 'vue'
-  import AuthorCountriesTile from '@/components/AuthorCountriesTile.vue'
-  import AuthorInstitutionTile from '@/components/AuthorInstitutionTile.vue'
-  import TopAuthorsTile from '@/components/TopAuthorsTile.vue'
-  import YearlyStatsTile from '@/components/YearlyStatsTile.vue'
+  import { apiGet } from '@/api'
+  import CountryWorldMap from '@/components/charts/CountryWorldMap.vue'
+  import LineChart from '@/components/charts/LineChart.vue'
+  import ScatterWorldMap from '@/components/charts/ScatterWorldMap.vue'
 
   const selectedJournal = ref(null)
   const searchJournal = ref('')
@@ -66,36 +90,39 @@
   watch(searchJournal, val => {
     if (val && val.length > 3) {
       const vallow = val.toLowerCase()
-      journalSuggestions.value = journals.value.filter(
-        j => j.lowerName.length > vallow.length && j.lowerName.includes(vallow)
-      ).slice(0, 200)
+      journalSuggestions.value = journals.value
+        .filter(
+          j =>
+            j.lowerName.length > vallow.length && j.lowerName.includes(vallow),
+        )
+        .slice(0, 200)
     }
   })
 
   watch(fractional, () => analyseJournal())
 
   onMounted(async () => {
-    const res = await fetch('http://localhost:8000/journals')
-    journals.value = await res.json()
+    journals.value = await apiGet('/journals')
     for (const j of journals.value) {
       j.lowerName = j.context_name.toLowerCase()
+      if (j.context_name.length > 80) {
+        j.context_name = j.context_name.slice(0, 80) + '…'
+      }
     }
   })
 
   async function analyseJournal () {
-    if (!selectedJournal.value) {
+    if (!selectedJournal.value.issn) {
       return
     }
     loading.value = true
 
     const params = new URLSearchParams({
       fractional: fractional.value,
-      journal: selectedJournal.value
+      journal: selectedJournal.value.issn,
     })
-    const res = await fetch('http://localhost:8000/journal-analysis/?' + params.toString())
-    data.value = await res.json()
+    data.value = await apiGet('/journal-analysis/?' + params.toString())
 
     loading.value = false
   }
-
 </script>

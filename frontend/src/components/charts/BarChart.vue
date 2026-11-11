@@ -9,13 +9,12 @@
   import { computed } from 'vue'
   import VChart from 'vue-echarts'
 
-
   const props = defineProps({
     data: Object,
     dataDimension: String,
     dataKey: String,
     dataValue: String,
-    height: Number
+    height: Number,
   })
 
   use([BarChart, CanvasRenderer, GridComponent, TitleComponent, TooltipComponent, LegendComponent])
@@ -34,41 +33,41 @@
         data: xvalues.map(xvalue => {
           const row = props.data.find(d =>
             d[props.dataKey] === xvalue
-            && (!props.dataDimension || d[props.dataDimension] === dim)
+            && (!props.dataDimension || d[props.dataDimension] === dim),
           )
           return row ? row[props.dataValue] : 0
-        })
+        }),
       }
     })
     return {
+      color: ['#9f0712', '#fbb369', '#2c5669'],
       tooltip: {
         trigger: 'axis',
         axisPointer: {
-          type: 'shadow'
+          type: 'shadow',
         },
       },
       legend: {
-        show: props.dataDimension && dimensions.length > 1
+        show: props.dataDimension && dimensions.length > 1,
       },
       grid: {
         left: '3%',
-        right: '4%',
+        right: '50px',
         bottom: '15%',
-        containLabel: true
+        containLabel: true,
       },
       xAxis: {
         type: 'category',
-        name: props.dataKey,
-        nameLocation: 'middle',
-        nameGap: 10,
         axisLabel: {
+          overflow: 'truncate',
+          width: 200,
           interval: 0,
-          rotate: -45
+          rotate: -45,
         },
-        data: xvalues
+        data: xvalues,
       },
       yAxis: {},
-      series
+      series,
     }
   })
 </script>

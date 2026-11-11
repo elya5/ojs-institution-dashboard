@@ -58,6 +58,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    '/method': RouteRecordInfo<
+      '/method',
+      '/method',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
   }
 
   /**
@@ -92,6 +99,12 @@ declare module 'vue-router/auto-routes' {
     'src/pages/journal.vue': {
       routes:
         | '/journal'
+      views:
+        | never
+    }
+    'src/pages/method.vue': {
+      routes:
+        | '/method'
       views:
         | never
     }

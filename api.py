@@ -1,13 +1,15 @@
 import hashlib
 import json
 import logging
+from datetime import datetime
+from functools import cache
 from itertools import chain
 
 import country_converter as coco
 import polars as pl
 import pyalex
 import requests
-from pyalex import Works
+from pyalex import Sources, Works
 
 from config import (
     ARTICLE_CACHE_PATH,
@@ -27,9 +29,7 @@ def ojs_articles_by_year() -> pl.DataFrame:
     logger.info('Fetching all OJS articles per year.')
     works = (
         Works()
-        .filter(
-            primary_location={'source': {'is_in_doaj': True}}, publication_year='>2010'
-        )
+        .filter(primary_location={'source': {'is_ojs': True}}, publication_year='>2010')
         .group_by('publication_year')
         .get()
     )
@@ -37,8 +37,16 @@ def ojs_articles_by_year() -> pl.DataFrame:
         pl.DataFrame(works)
         .rename({'key': 'Year'})
         .drop('key_display_name')
+        .filter(pl.col('Year').str.to_integer() <= datetime.now().year)
         .sort('Year')
     )
+
+
+@cache
+def get_openalex_languages() -> pl.DataFrame:
+    """Get language code to language display name mapping from OpenAlex."""
+    df = pl.DataFrame(Works().group_by('language').get())
+    return df.with_columns(pl.col('key').str.slice(31))
 
 
 def get_openalex_countries() -> list[dict[str, str]]:
@@ -64,6 +72,7 @@ def ojs_articles_for_journal(issns: list[str]) -> pl.LazyFrame:
                 'authorships',
                 'primary_location',
                 'primary_topic',
+                'language',
             ]
         )
         .filter(
@@ -86,10 +95,11 @@ def ojs_article_for_institution(ror: str) -> pl.LazyFrame:
                 'authorships',
                 'primary_location',
                 'primary_topic',
+                'language',
             ]
         )
         .filter(
-            primary_location={'source': {'is_in_doaj': True}},
+            primary_location={'source': {'is_ojs': True}},
             publication_year=f'>{MIN_PUBLICATION_YEAR - 1}',
             authorships={'institutions': {'ror': ror}},
         )
@@ -99,16 +109,21 @@ def ojs_article_for_institution(ror: str) -> pl.LazyFrame:
 
 def get_openalex_articles(query: Works) -> pl.LazyFrame:
     """Abstract method to fetch and cache articles based on input query."""
-    print(query.url)
     ARTICLE_CACHE_PATH.mkdir(exist_ok=True)
     cache_key = hashlib.sha256(query.url.encode()).hexdigest()
     cache_parquet = ARTICLE_CACHE_PATH / (cache_key + '.parquet')
+
     if cache_parquet.exists():
-        return pl.scan_parquet(cache_parquet)
+        file_mtime = datetime.fromtimestamp(cache_parquet.stat().st_mtime)
+        file_age_in_days = (datetime.now() - file_mtime).days
+        if file_age_in_days < 10:
+            return pl.scan_parquet(cache_parquet)
 
     num_articles = query.count()
     if num_articles > 20_000:
         raise ValueError(f'Too many articles (counted {num_articles})')
+    if num_articles == 0:
+        raise ValueError('No articles to fetch')
     logger.info(f'Fetching {num_articles} articles.')
 
     cache_jsonl = ARTICLE_CACHE_PATH / (cache_key + '.jsonl')
@@ -161,6 +176,7 @@ def get_openalex_articles(query: Works) -> pl.LazyFrame:
             'country_code',
             'institution_name',
             'author_weight',
+            'language',
         )
         .sink_parquet(cache_parquet)
     )
@@ -178,13 +194,41 @@ def share_of_ojs_articles(ror: str) -> pl.DataFrame:
             authorships={'institutions': {'ror': ror}},
             publication_year=f'>{MIN_PUBLICATION_YEAR - 1}',
         )
-        .group_by('primary_location.source.is_in_doaj')
+        .group_by('primary_location.source.id')
         .get()
     )
+    counts = pl.DataFrame(result)
+    source_ids = [
+        key.removeprefix('https://openalex.org/') for key in counts['key'].to_list()
+    ]
+
+    sources = [
+        source
+        for i in range(0, len(source_ids), 20)
+        for source in Sources()
+        .filter(openalex_id='|'.join(source_ids[i : i + 20]))
+        .get()
+    ]
+    source_df = pl.DataFrame(
+        [
+            {
+                'source_id': source['id'],
+                'is_ojs': source['is_ojs'],
+            }
+            for source in sources
+        ]
+    )
+
     return (
-        pl.DataFrame(result)
+        counts.join(
+            source_df,
+            left_on='key',
+            right_on='source_id',
+        )
+        .group_by('is_ojs')
+        .agg(pl.col('count').sum())
         .with_columns(
-            pl.when(pl.col('key_display_name') == 'true')
+            pl.when(pl.col('is_ojs'))
             .then(pl.lit('OJS'))
             .otherwise(pl.lit('Not OJS'))
             .alias('Publisher Software')
@@ -219,7 +263,6 @@ def get_ror_suggestions(text: str) -> list[dict]:
             timeout=5,
         )
         raw_options = r.json()['items'][:50]
-        print(raw_options)
         return [
             {
                 'ror': o['id'],
@@ -237,7 +280,7 @@ def get_tops_table_country(country_code: str) -> tuple[pl.DataFrame, pl.DataFram
     result = (
         Works()
         .filter(
-            primary_location={'source': {'is_in_doaj': True}},
+            primary_location={'source': {'is_ojs': True}},
             publication_year=f'>{MIN_PUBLICATION_YEAR - 1}',
             authorships={'countries': country_code},
         )
@@ -254,7 +297,7 @@ def get_tops_table_country(country_code: str) -> tuple[pl.DataFrame, pl.DataFram
     result = (
         Works()
         .filter(
-            primary_location={'source': {'is_in_doaj': True}},
+            primary_location={'source': {'is_ojs': True}},
             publication_year=f'>{MIN_PUBLICATION_YEAR - 1}',
             authorships={'countries': country_code},
         )
@@ -277,9 +320,46 @@ def share_of_ojs_articles_country(country_code: str) -> pl.DataFrame:
             publication_year=f'>{MIN_PUBLICATION_YEAR - 1}',
             authorships={'countries': country_code},
         )
-        .group_by('primary_location.source.is_in_doaj')
+        .group_by('primary_location.source.id')
         .get()
     )
+    counts = pl.DataFrame(result)
+    source_ids = [
+        key.removeprefix('https://openalex.org/') for key in counts['key'].to_list()
+    ]
+    sources = [
+        source
+        for i in range(0, len(source_ids), 20)
+        for source in Sources()
+        .filter(openalex_id='|'.join(source_ids[i : i + 20]))
+        .get()
+    ]
+    source_df = pl.DataFrame(
+        [
+            {
+                'source_id': source['id'],
+                'is_ojs': source['is_ojs'],
+            }
+            for source in sources
+        ]
+    )
+    return (
+        counts.join(
+            source_df,
+            left_on='key_display_name',
+            right_on='source_id',
+        )
+        .group_by('is_ojs')
+        .agg(pl.col('count').sum())
+        .with_columns(
+            pl.when(pl.col('is_ojs'))
+            .then(pl.lit('OJS'))
+            .otherwise(pl.lit('Not OJS'))
+            .alias('Publisher Software')
+        )
+        .rename({'count': 'Count'})
+    )
+
     return (
         pl.DataFrame(result)
         .with_columns(
@@ -296,7 +376,7 @@ def publications_per_year_country(country_code: str) -> pl.DataFrame:
     works = (
         Works()
         .filter(
-            primary_location={'source': {'is_in_doaj': True}},
+            primary_location={'source': {'is_ojs': True}},
             publication_year='>2020',
             authorships={'countries': country_code},
         )
@@ -316,7 +396,7 @@ def publication_per_discipline_country(country_code: str) -> pl.DataFrame:
     works = (
         Works()
         .filter(
-            primary_location={'source': {'is_in_doaj': True}},
+            primary_location={'source': {'is_ojs': True}},
             publication_year='>2020',
             authorships={'countries': country_code},
         )
@@ -335,7 +415,7 @@ def author_countries(country_code: str) -> pl.DataFrame:
     result = (
         Works()
         .filter(
-            primary_location={'source': {'is_in_doaj': True}},
+            primary_location={'source': {'is_ojs': True}},
             publication_year='>2020',
             authorships={'countries': country_code},
         )
@@ -353,7 +433,7 @@ def publications_per_institutions_locations(country_code: str) -> pl.DataFrame:
     query = (
         Works()
         .filter(
-            primary_location={'source': {'is_in_doaj': True}},
+            primary_location={'source': {'is_ojs': True}},
             publication_year='>2020',
             authorships={'countries': country_code},
         )
@@ -391,7 +471,7 @@ def publication_to_journal_location_country(country_code: str) -> pl.DataFrame:
     query = (
         Works()
         .filter(
-            primary_location={'source': {'is_in_doaj': True}},
+            primary_location={'source': {'is_ojs': True}},
             publication_year='>2020',
             authorships={'countries': country_code},
         )
@@ -410,7 +490,7 @@ def publication_to_journal_location_country(country_code: str) -> pl.DataFrame:
 
     return (
         pl.DataFrame(result)
-        .join(journals, left_on='key', right_on='issns')  # type: ignore
+        .join(journals, left_on='key', right_on='issns')
         .group_by('issn')
         .agg(
             pl.col('count').first(),
@@ -427,3 +507,77 @@ def publication_to_journal_location_country(country_code: str) -> pl.DataFrame:
             .map_batches(lambda x: pl.Series(coco.convert(x, to='name_short'))),
         )
     )
+
+
+def ojs_all_topics():
+    result = (
+        Works()
+        .filter(primary_location={'source': {'is_ojs': True}})
+        .group_by('primary_topic.field.id')
+        .get()
+    )
+    return (
+        pl.DataFrame(result)
+        .select('key_display_name', 'count')
+        .rename({'key_display_name': 'Topic', 'count': 'Count'})
+    )
+
+
+def ojs_all_languages():
+    result = (
+        Works()
+        .filter(primary_location={'source': {'is_ojs': True}})
+        .group_by('language')
+        .get()
+    )
+    return (
+        pl.DataFrame(result)
+        .select('key_display_name', 'count')
+        .rename({'key_display_name': 'Language', 'count': 'Count'})
+    )
+
+
+def ojs_all_metadata():
+    bool_fields = [
+        'has_abstract',
+        'has_pdf_url',
+        'open_access.any_repository_has_fulltext',
+        'has_references',
+        'is_oa',
+    ]
+    unknown_fields = [
+        'awards.id',
+        'funders.id',
+        'author.orcid',
+        'authorships.institutions.id',
+        'institutions.ror',
+    ]
+
+    total_result = {}
+    for field in bool_fields:
+        result = (
+            Works()
+            .filter(primary_location={'source': {'is_ojs': True}})
+            .group_by(field)
+            .get()
+        )
+        value = (
+            next(row['count'] for row in result if row['key_display_name'] == 'true')
+            / result.meta['count']
+        )
+        total_result[field] = round(value * 100)
+
+    for field in unknown_fields:
+        result = (
+            Works()
+            .filter(primary_location={'source': {'is_ojs': True}})
+            .group_by(field + ':include_unknown')
+            .get()
+        )
+        value = (
+            next(row['count'] for row in result if row['key'] == 'unknown')
+            / result.meta['count']
+        )
+        total_result[field] = round((1 - value) * 100, 0)
+
+    return total_result

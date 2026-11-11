@@ -10,7 +10,7 @@
         :height="400"
       />
     </v-card-text>
-</v-card>
+  </v-card>
 </template>
 
 <script setup>

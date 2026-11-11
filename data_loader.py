@@ -4,6 +4,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+import country_converter as coco
 import polars as pl
 import pyalex
 import requests
@@ -38,7 +39,24 @@ def download_beacon_dataset() -> None:
         with zipfile.ZipFile(zip_path, 'r') as z:
             z.extractall(tmpdir_path)
 
-        shutil.move(tmpdir_path / 'beacon.csv', BEACON_PATH)
+        shutil.move(tmpdir_path / 'beacon.tab', BEACON_PATH)
+
+    (
+        pl.scan_csv(BEACON_PATH, separator='\t')
+        # TODO: filter out journals with less than X articles?
+        # .filter(pl.col('record_count_2025') > 0)
+        .with_columns(pl.col('country').str.replace_all('NA', 'none'))
+        .with_columns(
+            pl.col('country')
+            .alias('country_code')
+            .map_batches(
+                lambda x: pl.Series(
+                    [c[0] for c in coco.convert(x, to='ISO2', enforce_list=True)]
+                ),
+            ),
+        )
+        .sink_csv(BEACON_PATH)
+    )
     logger.info('Download completed')
 
 
@@ -74,5 +92,4 @@ def get_journals() -> pl.LazyFrame:
     if not BEACON_PATH.exists():
         download_beacon_dataset()
 
-    # TODO: filter out journals with less that X articles?
     return pl.scan_csv(BEACON_PATH)

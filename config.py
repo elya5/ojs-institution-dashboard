@@ -1,13 +1,16 @@
+import os
 from pathlib import Path
 
-import streamlit as st
+from dotenv import load_dotenv
 
-BEACON_PATH = Path('data/beacon.csv')
-ROR_PATH = Path('data/ror_data.csv')
-ARTICLE_CACHE_PATH = Path('cache')
+load_dotenv()
 
-DATAVERSE_API_KEY = st.secrets['DATAVERSE_API_KEY']
-OPENALEX_API_KEY = st.secrets['OPENALEX_API_KEY']
-ROR_API_KEY = st.secrets['ROR_API_KEY']
+ARTICLE_CACHE_PATH = Path(os.getenv('CACHE_PATH') or 'cache')
+BEACON_PATH = ARTICLE_CACHE_PATH / 'beacon.tab'
+ROR_PATH = ARTICLE_CACHE_PATH / 'ror_data.csv'
 
-MIN_PUBLICATION_YEAR = 2020
+DATAVERSE_API_KEY = os.getenv('DATAVERSE_API_KEY')
+OPENALEX_API_KEY = os.getenv('OPENALEX_API_KEY')
+ROR_API_KEY = os.getenv('ROR_API_KEY')
+
+MIN_PUBLICATION_YEAR = 2021
